@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const { parse } = require('csv-parse/sync');
 const pool = require('../db');
+const { requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 const upload = multer({
@@ -72,8 +73,8 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-// POST /api/questions/upload
-router.post('/upload', upload.single('csv'), async (req, res) => {
+// POST /api/questions/upload  (apenas admins)
+router.post('/upload', requireAdmin, upload.single('csv'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo CSV enviado' });
   }

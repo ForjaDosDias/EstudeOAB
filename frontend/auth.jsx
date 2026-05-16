@@ -1,10 +1,18 @@
 /* global React */
 const { useState, useEffect } = React;
 
+const API = '/api';
+
 /* =========================================================
-   Tela inicial / splash — entrada do app
+   Splash Screen
    ========================================================= */
 function SplashScreen({ onStart, onLogin }) {
+  const [showLogin, setShowLogin] = useState(false);
+
+  if (showLogin) {
+    return <LoginScreen onBack={() => setShowLogin(false)} onLogin={onLogin} />;
+  }
+
   return (
     <div className="splash-wrap fade-in">
       <div className="splash-bg-shape splash-bg-bordo" />
@@ -22,7 +30,7 @@ function SplashScreen({ onStart, onLogin }) {
 
         <h1 className="splash-title">
           Da primeira leitura<br/>
-          ao <em>«passar na Ordem».»</em>
+          ao <em>«passar na Ordem».</em>
         </h1>
         <p className="splash-sub">
           Mais de 8.000 questões comentadas, simulados oficiais e plano de estudo adaptativo.
@@ -31,9 +39,9 @@ function SplashScreen({ onStart, onLogin }) {
 
         <div className="splash-cta-row">
           <button className="btn btn-cta btn-lg" onClick={onStart}>
-            🎯 Criar conta grátis
+            Criar conta grátis
           </button>
-          <button className="btn btn-ghost btn-lg" onClick={onLogin}>
+          <button className="btn btn-ghost btn-lg" onClick={() => setShowLogin(true)}>
             Já tenho conta
           </button>
         </div>
@@ -53,8 +61,104 @@ function SplashScreen({ onStart, onLogin }) {
   );
 }
 
+/* =========================================================
+   Login Screen
+   ========================================================= */
+function LoginScreen({ onBack, onLogin }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao fazer login');
+      onLogin(data.user, data.token);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-wrap fade-in">
+      <div className="splash-bg-shape splash-bg-bordo" />
+      <div className="splash-bg-shape splash-bg-amarelo" />
+
+      <div className="login-box">
+        <button className="reg-back" onClick={onBack} style={{ marginBottom: 24 }}>← Voltar</button>
+
+        <div className="splash-mark" style={{ marginBottom: 32 }}>
+          <div className="splash-mark-circle" style={{ width: 40, height: 40 }}>
+            <span className="splash-mark-letter" style={{ fontSize: 18 }}>A</span>
+          </div>
+          <div>
+            <div className="splash-brand" style={{ fontSize: 18 }}>Aprovado OAB</div>
+            <div className="splash-eyebrow">Acesse sua conta</div>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="reg-form">
+          <div className="input-group">
+            <label className="input-label">E-mail</label>
+            <input
+              className="input-field"
+              type="email"
+              placeholder="voce@email.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              autoFocus
+              required
+            />
+          </div>
+          <div className="input-group">
+            <label className="input-label">Senha</label>
+            <input
+              className="input-field"
+              type="password"
+              placeholder="Sua senha"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+            />
+          </div>
+
+          {error && (
+            <div className="login-error">
+              <span>✕</span> {error}
+            </div>
+          )}
+
+          <button
+            className="btn btn-primary btn-lg"
+            type="submit"
+            disabled={loading || !email || !password}
+            style={{ width: '100%', marginTop: 8 }}
+          >
+            {loading ? 'Entrando…' : 'Entrar →'}
+          </button>
+        </form>
+
+        <p className="login-footer-text">
+          Não tem conta?{' '}
+          <button className="btn-link" onClick={onBack}>Criar conta grátis</button>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function SplashPreviewCard() {
-  // mini-amostra de questão decorativa
   return (
     <div className="splash-card">
       <div className="splash-card-header">
@@ -102,20 +206,55 @@ function RegisterFlow({ onCancel, onComplete }) {
     edicao: 'XLI', faseAlvo: '1', dataProva: '',
     minutosDia: 30, areas: ['civil', 'const', 'etica'],
   });
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
   const update = (patch) => setForm(f => ({ ...f, ...patch }));
 
   const canAdvance = () => {
-    if (step === 0) return form.nome.trim().length > 1 && /.+@.+\..+/.test(form.email) && form.senha.length >= 6;
+    if (submitting) return false;
+    if (step === 0) return form.nome.trim().length > 1 && /.+@.+\..+/.test(form.email) && form.senha.length >= 8;
     if (step === 1) return !!form.edicao;
     if (step === 2) return form.areas.length > 0;
     return true;
   };
 
-  const goNext = () => {
-    if (step < REGISTER_STEPS.length - 1) setStep(s => s + 1);
-    else onComplete(form);
+  const goNext = async () => {
+    setError(null);
+    // Último passo: chama a API
+    if (step === REGISTER_STEPS.length - 1) {
+      setSubmitting(true);
+      try {
+        const res = await fetch(`${API}/auth/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nome:       form.nome,
+            email:      form.email,
+            password:   form.senha,
+            edicao:     form.edicao,
+            minutosDia: form.minutosDia,
+            areas:      form.areas,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Erro ao criar conta');
+        onComplete(data.user, data.token);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+    setStep(s => s + 1);
   };
-  const goBack = () => step > 0 ? setStep(s => s - 1) : onCancel();
+
+  const goBack = () => {
+    setError(null);
+    if (step > 0) setStep(s => s - 1);
+    else onCancel();
+  };
 
   return (
     <div className="reg-wrap fade-in">
@@ -143,14 +282,27 @@ function RegisterFlow({ onCancel, onComplete }) {
           {step === 1 && <StepObjetivo form={form} update={update} />}
           {step === 2 && <StepRotina form={form} update={update} />}
           {step === 3 && <StepPronto form={form} />}
+          {error && (
+            <div className="login-error" style={{ marginTop: 16 }}>
+              <span>✕</span> {error}
+            </div>
+          )}
         </div>
 
         <div className="reg-footer">
-          <button className="btn btn-quiet" onClick={goBack}>
+          <button className="btn btn-quiet" onClick={goBack} disabled={submitting}>
             {step === 0 ? 'Cancelar' : '← Voltar'}
           </button>
-          <button className="btn btn-primary btn-lg" disabled={!canAdvance()} onClick={goNext}>
-            {step === REGISTER_STEPS.length - 1 ? 'Entrar na plataforma →' : 'Continuar →'}
+          <button
+            className="btn btn-primary btn-lg"
+            disabled={!canAdvance()}
+            onClick={goNext}
+          >
+            {submitting
+              ? 'Criando conta…'
+              : step === REGISTER_STEPS.length - 1
+                ? 'Entrar na plataforma →'
+                : 'Continuar →'}
           </button>
         </div>
       </main>
@@ -179,21 +331,9 @@ function StepIdentidade({ form, update }) {
         </div>
         <div className="input-group">
           <label className="input-label">Senha</label>
-          <input className="input-field" type="password" placeholder="Mínimo 6 caracteres"
+          <input className="input-field" type="password" placeholder="Mínimo 8 caracteres"
                  value={form.senha} onChange={e => update({ senha: e.target.value })} />
           <PasswordStrength value={form.senha} />
-        </div>
-
-        <div className="reg-divider"><span>ou</span></div>
-        <div className="reg-oauth">
-          <button className="reg-oauth-btn" type="button">
-            <span className="reg-oauth-ic" style={{background:'#fff', color:'#444'}}>G</span>
-            Continuar com Google
-          </button>
-          <button className="reg-oauth-btn" type="button">
-            <span className="reg-oauth-ic" style={{background:'#000', color:'#fff'}}>⌘</span>
-            Continuar com Apple
-          </button>
         </div>
 
         <label className="reg-check">
@@ -208,23 +348,23 @@ function StepIdentidade({ form, update }) {
 function PasswordStrength({ value }) {
   const score = (() => {
     let s = 0;
-    if (value.length >= 6) s++;
-    if (value.length >= 10) s++;
+    if (value.length >= 8)  s++;
+    if (value.length >= 12) s++;
     if (/[A-Z]/.test(value)) s++;
     if (/[0-9]/.test(value)) s++;
     if (/[^a-zA-Z0-9]/.test(value)) s++;
     return Math.min(s, 4);
   })();
   const labels = ['muito fraca', 'fraca', 'razoável', 'boa', 'excelente'];
-  const colors = ['#c4607080','#a63f50','#fba93a','#4a9967','#2d7a50'];
+  const colors = ['#c4607080', '#a63f50', '#fba93a', '#4a9967', '#2d7a50'];
   return (
     <div className="pwd-strength">
       <div className="pwd-bars">
-        {[0,1,2,3].map(i => (
+        {[0, 1, 2, 3].map(i => (
           <div key={i} className="pwd-bar" style={{ background: i < score ? colors[score] : 'var(--bege)' }} />
         ))}
       </div>
-      <span className="pwd-strength-label" style={{color: value ? colors[score] : 'var(--text-muted)'}}>
+      <span className="pwd-strength-label" style={{ color: value ? colors[score] : 'var(--text-muted)' }}>
         {value ? labels[score] : 'digite uma senha'}
       </span>
     </div>
@@ -233,10 +373,10 @@ function PasswordStrength({ value }) {
 
 function StepObjetivo({ form, update }) {
   const edicoes = [
-    { id: 'XL',   label: 'XL Exame · Próximo',  data: 'Set/2026', destaque: true },
-    { id: 'XLI',  label: 'XLI Exame',           data: 'Jan/2027' },
-    { id: 'XLII', label: 'XLII Exame',          data: 'Mai/2027' },
-    { id: 'aberto', label: 'Sem prazo definido', data: 'Estudo livre' },
+    { id: 'XL',     label: 'XL Exame · Próximo',   data: 'Set/2026', destaque: true },
+    { id: 'XLI',    label: 'XLI Exame',             data: 'Jan/2027' },
+    { id: 'XLII',   label: 'XLII Exame',            data: 'Mai/2027' },
+    { id: 'aberto', label: 'Sem prazo definido',    data: 'Estudo livre' },
   ];
   return (
     <>
@@ -246,13 +386,15 @@ function StepObjetivo({ form, update }) {
 
       <div className="reg-options">
         {edicoes.map(e => (
-          <button key={e.id}
-                  type="button"
+          <button key={e.id} type="button"
                   className={`reg-opt ${form.edicao === e.id ? 'is-active' : ''}`}
                   onClick={() => update({ edicao: e.id })}>
             <div className="reg-opt-radio">{form.edicao === e.id && <span />}</div>
             <div className="reg-opt-text">
-              <div className="reg-opt-label">{e.label}{e.destaque && <span className="chip chip-amarelo" style={{marginLeft:8}}>🔥 mais escolhido</span>}</div>
+              <div className="reg-opt-label">
+                {e.label}
+                {e.destaque && <span className="chip chip-amarelo" style={{ marginLeft: 8 }}>🔥 mais escolhido</span>}
+              </div>
               <div className="reg-opt-meta">{e.data}</div>
             </div>
           </button>
@@ -282,7 +424,9 @@ function StepRotina({ form, update }) {
   const { AREAS } = window.AppData;
   const minutos = [15, 30, 45, 60, 90];
   const toggleArea = (id) => {
-    const next = form.areas.includes(id) ? form.areas.filter(a => a !== id) : [...form.areas, id];
+    const next = form.areas.includes(id)
+      ? form.areas.filter(a => a !== id)
+      : [...form.areas, id];
     update({ areas: next });
   };
   return (
@@ -294,8 +438,7 @@ function StepRotina({ form, update }) {
       <div className="reg-section-title">Tempo diário disponível</div>
       <div className="reg-chips">
         {minutos.map(m => (
-          <button key={m}
-                  type="button"
+          <button key={m} type="button"
                   className={`reg-chip-btn ${form.minutosDia === m ? 'is-active' : ''}`}
                   onClick={() => update({ minutosDia: m })}>
             {m} min
@@ -303,15 +446,14 @@ function StepRotina({ form, update }) {
         ))}
       </div>
 
-      <div className="reg-section-title" style={{marginTop:24}}>
+      <div className="reg-section-title" style={{ marginTop: 24 }}>
         Áreas de maior interesse <span className="reg-section-sub">· selecione 1 ou mais</span>
       </div>
       <div className="reg-areas">
         {Object.values(AREAS).map(a => {
           const active = form.areas.includes(a.id);
           return (
-            <button key={a.id}
-                    type="button"
+            <button key={a.id} type="button"
                     className={`reg-area ${active ? 'is-active' : ''}`}
                     onClick={() => toggleArea(a.id)}>
               <span className="reg-area-ic">{a.icon}</span>
@@ -327,15 +469,12 @@ function StepRotina({ form, update }) {
 
 function StepPronto({ form }) {
   const { AREAS } = window.AppData;
-  const minutosLabel = form.minutosDia + ' min/dia';
   return (
     <div className="reg-pronto">
-      <div className="reg-pronto-mark">
-        <span>✓</span>
-      </div>
+      <div className="reg-pronto-mark"><span>✓</span></div>
       <div className="eyebrow">Tudo pronto</div>
       <h2 className="reg-title">Bem-vindo(a), {form.nome.split(' ')[0] || 'Estudante'}.</h2>
-      <p className="reg-sub" style={{maxWidth:520, margin:'0 auto'}}>
+      <p className="reg-sub" style={{ maxWidth: 520, margin: '0 auto' }}>
         Montamos seu plano de estudos com base nas suas escolhas. Você verá ele logo na sua dashboard.
       </p>
 
@@ -346,7 +485,7 @@ function StepPronto({ form }) {
         </div>
         <div>
           <div className="stat-label">Rotina</div>
-          <div className="reg-pronto-val">{minutosLabel}</div>
+          <div className="reg-pronto-val">{form.minutosDia} min/dia</div>
         </div>
         <div>
           <div className="stat-label">Áreas</div>
@@ -355,7 +494,7 @@ function StepPronto({ form }) {
       </div>
 
       <div className="reg-pronto-areas">
-        {form.areas.map(id => (
+        {form.areas.map(id => AREAS[id] && (
           <span key={id} className={`area-pill ${AREAS[id].pillClass}`}>
             {AREAS[id].icon} {AREAS[id].label}
           </span>

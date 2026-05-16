@@ -6,7 +6,7 @@ const API_BASE = '/api';
 /* =========================================================
    Admin Panel — upload de questões via CSV
    ========================================================= */
-function AdminPage({ onNavigate }) {
+function AdminPage({ token, onNavigate }) {
   const [tab, setTabAdmin] = useStateAdmin('upload'); // upload | questoes
 
   return (
@@ -29,14 +29,14 @@ function AdminPage({ onNavigate }) {
         </button>
       </div>
 
-      {tab === 'upload'   && <AdminUpload />}
-      {tab === 'questoes' && <AdminQuestoes />}
+      {tab === 'upload'   && <AdminUpload token={token} />}
+      {tab === 'questoes' && <AdminQuestoes token={token} />}
     </div>
   );
 }
 
 /* ---------- Upload de CSV ---------- */
-function AdminUpload() {
+function AdminUpload({ token }) {
   const [file, setFile] = useStateAdmin(null);
   const [preview, setPreview] = useStateAdmin(null);
   const [status, setStatus] = useStateAdmin(null); // null | 'uploading' | 'success' | 'error'
@@ -89,6 +89,7 @@ function AdminUpload() {
     try {
       const res = await fetch(`${API_BASE}/questions/upload`, {
         method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
         body: formData,
       });
       const data = await res.json();
@@ -235,7 +236,7 @@ function AdminUpload() {
 }
 
 /* ---------- Listagem de questões no banco ---------- */
-function AdminQuestoes() {
+function AdminQuestoes({ token }) {
   const [questions, setQuestions] = useStateAdmin([]);
   const [stats, setStats] = useStateAdmin(null);
   const [loading, setLoading] = useStateAdmin(true);
@@ -255,9 +256,10 @@ function AdminQuestoes() {
         ...(filters.banca       && { banca: filters.banca }),
         ...(filters.dificuldade && { dificuldade: filters.dificuldade }),
       });
+      const headers = { Authorization: `Bearer ${token}` };
       const [qRes, sRes] = await Promise.all([
-        fetch(`${API_BASE}/questions?${params}`),
-        fetch(`${API_BASE}/questions/stats`),
+        fetch(`${API_BASE}/questions?${params}`, { headers }),
+        fetch(`${API_BASE}/questions/stats`,    { headers }),
       ]);
       const qData = await qRes.json();
       const sData = await sRes.json();

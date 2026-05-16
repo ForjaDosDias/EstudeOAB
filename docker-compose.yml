@@ -26,6 +26,7 @@ services:
       DATABASE_URL: postgres://estudeoab:estudeoab_pass@db:5432/estudeoab
       PORT: 3001
       NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET env var is required}
     # sem port binding — API acessível apenas via nginx dentro da rede Docker
     depends_on:
       db:

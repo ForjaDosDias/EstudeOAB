@@ -1,97 +1,98 @@
 /* global React, ReactDOM */
 const { useState: useStateApp, useEffect: useEffectApp } = React;
 
-function App() {
-  // route: 'splash' | 'register' | 'app'
-  const [route, setRoute]   = useStateApp('splash');
-  // page (dentro do app autenticado): dashboard | practice | stats | review
-  const [page, setPage]     = useStateApp('dashboard');
-  const [user, setUser]     = useStateApp(null);
-  const [toast, setToast]   = useStateApp(null);
+const API = '/api';
+const TOKEN_KEY = 'oab_token';
 
-  // Helpers
+function App() {
+  const [route, setRoute]     = useStateApp('loading'); // loading | splash | register | app
+  const [page, setPage]       = useStateApp('dashboard');
+  const [user, setUser]       = useStateApp(null);
+  const [token, setToken]     = useStateApp(null);
+  const [toast, setToast]     = useStateApp(null);
+
   const flashToast = (t) => {
     setToast(t);
     setTimeout(() => setToast(null), 4200);
   };
 
-  // Demo: para facilitar revisão, permite trocar de rota via URL hash
+  // Ao iniciar: verifica token salvo e valida com a API
   useEffectApp(() => {
-    const apply = () => {
-      const h = window.location.hash.replace('#','');
-      if (['splash','register','dashboard','practice','stats','review','admin'].includes(h)) {
-        if (h === 'splash')   { setRoute('splash'); }
-        else if (h === 'register') { setRoute('register'); }
-        else {
-          ensureDemoUser();
-          setRoute('app');
-          setPage(h);
-        }
-      }
-    };
-    apply();
-    window.addEventListener('hashchange', apply);
-    return () => window.removeEventListener('hashchange', apply);
+    const saved = localStorage.getItem(TOKEN_KEY);
+    if (!saved) { setRoute('splash'); return; }
+
+    fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${saved}` } })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(userData => {
+        setToken(saved);
+        setUser(userData);
+        setRoute('app');
+        setPage('dashboard');
+      })
+      .catch(() => {
+        localStorage.removeItem(TOKEN_KEY);
+        setRoute('splash');
+      });
   }, []);
 
-  const ensureDemoUser = () => {
-    setUser(u => u || ({
-      nome: 'Ana Beatriz Marques',
-      email: 'ana@email.com',
-      edicao: 'XLI',
-      minutosDia: 30,
-      areas: ['civil','const','etica','penal'],
-      xp: window.AppData.STATS_OVERVIEW.xpTotal,
-      streak: window.AppData.STATS_OVERVIEW.streak,
-    }));
+  const doLogin = (userData, newToken) => {
+    localStorage.setItem(TOKEN_KEY, newToken);
+    setToken(newToken);
+    setUser(userData);
+    setRoute('app');
+    setPage('dashboard');
   };
 
-  // Fluxo: splash → register → app
+  const doLogout = () => {
+    localStorage.removeItem(TOKEN_KEY);
+    setToken(null);
+    setUser(null);
+    setRoute('splash');
+    flashToast({ kind: 'success', title: 'Até logo!', body: 'Sessão encerrada.' });
+  };
+
   const handleRegisterStart = () => setRoute('register');
-  const handleLogin = () => {
-    ensureDemoUser();
-    setRoute('app');
-    setPage('dashboard');
-    flashToast({ kind: 'success', title: 'Bem-vinda de volta!', body: 'Login realizado com sucesso.' });
+
+  const handleLogin = (userData, newToken) => {
+    doLogin(userData, newToken);
+    flashToast({ kind: 'success', title: 'Bem-vindo(a) de volta!', body: 'Login realizado com sucesso.' });
   };
 
-  const handleRegisterComplete = (form) => {
-    setUser({
-      nome: form.nome,
-      email: form.email,
-      edicao: form.edicao,
-      minutosDia: form.minutosDia,
-      areas: form.areas,
-      xp: 0,
-      streak: 1,
-    });
-    setRoute('app');
-    setPage('dashboard');
+  const handleRegisterComplete = (userData, newToken) => {
+    doLogin(userData, newToken);
     flashToast({ kind: 'xp', title: '+50 XP de boas-vindas!', body: 'Conta criada · plano de estudo gerado.' });
   };
 
   const handleNavigate = (p) => setPage(p);
   const handlePracticeStart = () => setPage('practice');
 
-  // RENDER
+  // Tela de carregamento (verifica token)
+  if (route === 'loading') {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)' }}>
+        <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>A</div>
+          <div style={{ fontSize: 14 }}>Carregando…</div>
+        </div>
+      </div>
+    );
+  }
+
   if (route === 'splash') {
     return (
-      <>
-        <window.AuthFlow.SplashScreen onStart={handleRegisterStart} onLogin={handleLogin} />
-        <DemoSwitcher route={route} page={page} setRoute={setRoute} setPage={setPage} ensureDemoUser={ensureDemoUser} />
-      </>
+      <window.AuthFlow.SplashScreen
+        onStart={handleRegisterStart}
+        onLogin={handleLogin}
+      />
     );
   }
 
   if (route === 'register') {
     return (
-      <>
-        <window.AuthFlow.RegisterFlow
-          onCancel={() => setRoute('splash')}
-          onComplete={handleRegisterComplete}
-        />
-        <DemoSwitcher route={route} page={page} setRoute={setRoute} setPage={setPage} ensureDemoUser={ensureDemoUser} />
-      </>
+      <window.AuthFlow.RegisterFlow
+        onCancel={() => setRoute('splash')}
+        onComplete={handleRegisterComplete}
+      />
     );
   }
 
@@ -103,12 +104,20 @@ function App() {
         page={page}
         onNavigate={handleNavigate}
         onPracticeStart={handlePracticeStart}
+        onLogout={doLogout}
       >
         {page === 'dashboard' && <window.Shell.Dashboard user={user} onPracticeStart={handlePracticeStart} onNavigate={handleNavigate} />}
         {page === 'practice'  && <window.Practice.PracticeFlow user={user} onExit={() => setPage('dashboard')} onNavigate={handleNavigate} />}
         {page === 'stats'     && <window.Stats.StatsPage onNavigate={handleNavigate} />}
         {page === 'review'    && <window.Stats.StatsPage onNavigate={handleNavigate} />}
-        {page === 'admin'     && <window.Admin.AdminPage onNavigate={handleNavigate} />}
+        {page === 'admin'     && user?.role === 'admin' && <window.Admin.AdminPage token={token} onNavigate={handleNavigate} />}
+        {page === 'admin'     && user?.role !== 'admin' && (
+          <div style={{ padding: 64, textAlign: 'center', color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>⚠</div>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Acesso restrito</div>
+            <div>Esta área é exclusiva para administradores.</div>
+          </div>
+        )}
       </window.Shell.AppShell>
 
       {toast && (
@@ -122,62 +131,7 @@ function App() {
           </div>
         </div>
       )}
-
-      <DemoSwitcher route={route} page={page} setRoute={setRoute} setPage={setPage} ensureDemoUser={ensureDemoUser} />
     </>
-  );
-}
-
-/* =========================================================
-   Demo Switcher — atalho discreto para navegar entre jornadas
-   (essencial em protótipos: o usuário consegue pular pra
-    qualquer ponto da experiência sem refazer o fluxo)
-   ========================================================= */
-function DemoSwitcher({ route, page, setRoute, setPage, ensureDemoUser }) {
-  const [open, setOpen] = useStateApp(false);
-  const items = [
-    { id: 'splash',    label: 'Splash',         hint: 'Tela de entrada' },
-    { id: 'register',  label: 'Cadastro',       hint: 'Jornada multi-step' },
-    { id: 'dashboard', label: 'Dashboard',      hint: 'Home autenticada' },
-    { id: 'practice',  label: 'Responder',      hint: 'Sessão de questões' },
-    { id: 'stats',     label: 'Estatísticas',   hint: 'Acertos + histórico' },
-    { id: 'admin',     label: 'Admin',          hint: 'Upload de CSV' },
-  ];
-  const go = (id) => {
-    if (id === 'splash')   { setRoute('splash'); }
-    else if (id === 'register') { setRoute('register'); }
-    else { ensureDemoUser(); setRoute('app'); setPage(id); }
-    setOpen(false);
-  };
-  const current = route === 'app' ? page : route;
-
-  return (
-    <div className={`demo-switcher ${open ? 'is-open' : ''}`}>
-      <button className="demo-switcher-toggle" onClick={() => setOpen(o => !o)} title="Navegar entre jornadas">
-        <span className="demo-switcher-dot" />
-        <span>{open ? 'Fechar' : 'Jornadas'}</span>
-      </button>
-      {open && (
-        <div className="demo-switcher-panel fade-up">
-          <div className="demo-switcher-head">
-            <div className="demo-switcher-title">Atalhos do protótipo</div>
-            <div className="demo-switcher-sub">Salte direto para qualquer tela. Em produção, este menu não aparece.</div>
-          </div>
-          {items.map(it => (
-            <button key={it.id}
-                    className={`demo-switcher-item ${current === it.id ? 'is-current' : ''}`}
-                    onClick={() => go(it.id)}>
-              <span className="demo-switcher-item-dot" />
-              <div>
-                <div className="demo-switcher-item-label">{it.label}</div>
-                <div className="demo-switcher-item-hint">{it.hint}</div>
-              </div>
-              {current === it.id && <span className="demo-switcher-item-now">aqui</span>}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 

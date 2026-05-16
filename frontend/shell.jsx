@@ -4,13 +4,16 @@ const { useState: useStateShell } = React;
 /* =========================================================
    App Shell — sidebar + topbar do app autenticado
    ========================================================= */
-function AppShell({ user, page, onNavigate, onPracticeStart, children }) {
+function AppShell({ user, page, onNavigate, onPracticeStart, onLogout, children }) {
+  const [showUserMenu, setShowUserMenu] = useStateShell(false);
+
   const navItems = [
-    { id: 'dashboard', label: 'Início',        icon: '◆' },
-    { id: 'practice',  label: 'Praticar',      icon: '▶' },
-    { id: 'stats',     label: 'Estatísticas',  icon: '◇' },
-    { id: 'review',    label: 'Histórico',     icon: '☷' },
-    { id: 'admin',     label: 'Admin',         icon: '⚙' },
+    { id: 'dashboard', label: 'Início',       icon: '◆' },
+    { id: 'practice',  label: 'Praticar',     icon: '▶' },
+    { id: 'stats',     label: 'Estatísticas', icon: '◇' },
+    { id: 'review',    label: 'Histórico',    icon: '☷' },
+    // "Admin" aparece apenas para usuários com role='admin'
+    ...(user?.role === 'admin' ? [{ id: 'admin', label: 'Admin', icon: '⚙' }] : []),
   ];
 
   return (
@@ -20,7 +23,7 @@ function AppShell({ user, page, onNavigate, onPracticeStart, children }) {
           <div className="sidebar-mark">A</div>
           <div>
             <div className="sidebar-brand-name">Aprovado OAB</div>
-            <div className="sidebar-brand-meta">XLI · {user.minutosDia}min/dia</div>
+            <div className="sidebar-brand-meta">{user?.edicao || 'OAB'} · {user?.minutosDia || 30}min/dia</div>
           </div>
         </div>
 
@@ -39,21 +42,28 @@ function AppShell({ user, page, onNavigate, onPracticeStart, children }) {
           <span>⚡</span>
           <div>
             <div>Iniciar sessão</div>
-            <span>{user.minutosDia} min · 10 questões</span>
+            <span>{user?.minutosDia || 30} min · 10 questões</span>
           </div>
         </button>
 
-        <div className="sidebar-user">
-          <div className="sidebar-avatar">{(user.nome[0] || 'E').toUpperCase()}</div>
+        <div className="sidebar-user" style={{ position: 'relative' }}>
+          <div className="sidebar-avatar">{(user?.nome?.[0] || 'E').toUpperCase()}</div>
           <div className="sidebar-user-info">
-            <div className="sidebar-user-name">{user.nome.split(' ')[0]}</div>
-            <div className="sidebar-user-meta">⚡ {user.xp} XP · 🔥 {user.streak}d</div>
+            <div className="sidebar-user-name">{user?.nome?.split(' ')[0] || 'Estudante'}</div>
+            <div className="sidebar-user-meta">⚡ {user?.xp || 0} XP · 🔥 {user?.streak || 0}d</div>
           </div>
-          <button className="sidebar-user-more">⋯</button>
+          <button className="sidebar-user-more" onClick={() => setShowUserMenu(m => !m)}>⋯</button>
+          {showUserMenu && (
+            <div className="sidebar-user-popup fade-up">
+              <button className="sidebar-user-popup-item logout" onClick={() => { setShowUserMenu(false); onLogout?.(); }}>
+                Sair da conta
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
-      <main className="shell-main">
+      <main className="shell-main" onClick={() => setShowUserMenu(false)}>
         {children}
       </main>
     </div>

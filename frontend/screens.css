@@ -795,6 +795,50 @@
 }
 
 /* =========================================================
+   LOGIN
+   ========================================================= */
+.login-wrap {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: var(--bg-base); position: relative; overflow: hidden;
+}
+.login-box {
+  width: 100%; max-width: 440px; background: var(--bg-surface);
+  border: 1px solid var(--border); border-radius: 20px;
+  padding: 40px 36px; position: relative; z-index: 1;
+  box-shadow: 0 8px 48px rgba(0,0,0,.18);
+}
+.login-error {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(239,68,68,.08); border: 1px solid rgba(239,68,68,.25);
+  border-radius: 8px; padding: 10px 14px;
+  color: #dc2626; font-size: var(--text-sm); margin-top: 4px;
+}
+.login-footer-text {
+  text-align: center; font-size: var(--text-sm); color: var(--text-muted); margin-top: 20px;
+}
+.btn-link {
+  background: none; border: none; padding: 0;
+  color: var(--bordo); font-size: var(--text-sm); font-weight: 600;
+  cursor: pointer; text-decoration: underline;
+}
+.btn-link:hover { opacity: .8; }
+
+/* User menu popup */
+.sidebar-user-popup {
+  position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 8px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden; z-index: 100;
+  box-shadow: 0 4px 24px rgba(0,0,0,.2);
+}
+.sidebar-user-popup-item {
+  display: block; width: 100%; text-align: left; padding: 12px 16px;
+  font-size: var(--text-sm); font-weight: 600; background: none; border: none; cursor: pointer;
+  color: var(--text-secondary); transition: background .15s;
+}
+.sidebar-user-popup-item:hover { background: var(--bg-glass); }
+.sidebar-user-popup-item.logout { color: #dc2626; }
+
+/* =========================================================
    ADMIN
    ========================================================= */
 .admin-page { max-width: 1100px; margin: 0 auto; padding: 40px 32px; }

@@ -1,3 +1,19 @@
+CREATE TABLE IF NOT EXISTS users (
+  id            SERIAL PRIMARY KEY,
+  email         VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  nome          VARCHAR(255),
+  role          VARCHAR(20)  NOT NULL DEFAULT 'user',  -- 'user' | 'admin'
+  edicao        VARCHAR(20)  DEFAULT 'XLI',
+  minutos_dia   INTEGER      DEFAULT 30,
+  areas         TEXT[]       DEFAULT ARRAY['civil','const','etica'],
+  xp            INTEGER      DEFAULT 0,
+  streak        INTEGER      DEFAULT 0,
+  created_at    TIMESTAMPTZ  DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
 CREATE TABLE IF NOT EXISTS questions (
   id             SERIAL PRIMARY KEY,
   external_id    VARCHAR(100) UNIQUE,
