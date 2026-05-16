@@ -10,6 +10,7 @@ function AppShell({ user, page, onNavigate, onPracticeStart, children }) {
     { id: 'practice',  label: 'Praticar',      icon: '▶' },
     { id: 'stats',     label: 'Estatísticas',  icon: '◇' },
     { id: 'review',    label: 'Histórico',     icon: '☷' },
+    { id: 'admin',     label: 'Admin',         icon: '⚙' },
   ];
 
   return (

@@ -19,7 +19,7 @@ function App() {
   useEffectApp(() => {
     const apply = () => {
       const h = window.location.hash.replace('#','');
-      if (['splash','register','dashboard','practice','stats','review'].includes(h)) {
+      if (['splash','register','dashboard','practice','stats','review','admin'].includes(h)) {
         if (h === 'splash')   { setRoute('splash'); }
         else if (h === 'register') { setRoute('register'); }
         else {
@@ -108,6 +108,7 @@ function App() {
         {page === 'practice'  && <window.Practice.PracticeFlow user={user} onExit={() => setPage('dashboard')} onNavigate={handleNavigate} />}
         {page === 'stats'     && <window.Stats.StatsPage onNavigate={handleNavigate} />}
         {page === 'review'    && <window.Stats.StatsPage onNavigate={handleNavigate} />}
+        {page === 'admin'     && <window.Admin.AdminPage onNavigate={handleNavigate} />}
       </window.Shell.AppShell>
 
       {toast && (
@@ -140,6 +141,7 @@ function DemoSwitcher({ route, page, setRoute, setPage, ensureDemoUser }) {
     { id: 'dashboard', label: 'Dashboard',      hint: 'Home autenticada' },
     { id: 'practice',  label: 'Responder',      hint: 'Sessão de questões' },
     { id: 'stats',     label: 'Estatísticas',   hint: 'Acertos + histórico' },
+    { id: 'admin',     label: 'Admin',          hint: 'Upload de CSV' },
   ];
   const go = (id) => {
     if (id === 'splash')   { setRoute('splash'); }
