@@ -3,11 +3,15 @@ const { useState: useStateAdmin, useEffect: useEffectAdmin, useRef: useRefAdmin 
 
 const API_BASE = '/api';
 
+function adminFetch(path, opts = {}) {
+  return window.apiFetch(path, opts);
+}
+
 /* =========================================================
-   Admin Panel — upload de questões via CSV
+   Admin Panel
    ========================================================= */
 function AdminPage({ token, onNavigate }) {
-  const [tab, setTabAdmin] = useStateAdmin('upload'); // upload | questoes
+  const [tab, setTabAdmin] = useStateAdmin('pdf');
 
   return (
     <div className="admin-page fade-up">
@@ -15,45 +19,278 @@ function AdminPage({ token, onNavigate }) {
         <div>
           <div className="eyebrow">Administração</div>
           <h1 className="page-h1">Gestão de Questões</h1>
-          <p className="page-sub">Importe questões via CSV e gerencie o banco de dados da plataforma.</p>
+          <p className="page-sub">Importe questões via PDF (IA) ou CSV e gerencie o banco de dados.</p>
         </div>
         <button className="btn btn-quiet" onClick={() => onNavigate('dashboard')}>← Voltar</button>
       </header>
 
       <div className="admin-tabs">
-        <button className={`admin-tab ${tab === 'upload' ? 'is-active' : ''}`} onClick={() => setTabAdmin('upload')}>
-          ↑ Importar CSV
-        </button>
-        <button className={`admin-tab ${tab === 'questoes' ? 'is-active' : ''}`} onClick={() => setTabAdmin('questoes')}>
-          ≡ Questões no banco
-        </button>
+        <button className={`admin-tab ${tab === 'pdf'      ? 'is-active' : ''}`} onClick={() => setTabAdmin('pdf')}>      ✦ Importar PDF</button>
+        <button className={`admin-tab ${tab === 'csv'      ? 'is-active' : ''}`} onClick={() => setTabAdmin('csv')}>      ↑ Importar CSV</button>
+        <button className={`admin-tab ${tab === 'questoes' ? 'is-active' : ''}`} onClick={() => setTabAdmin('questoes')}>≡ Questões no banco</button>
       </div>
 
-      {tab === 'upload'   && <AdminUpload token={token} />}
-      {tab === 'questoes' && <AdminQuestoes token={token} />}
+      {tab === 'pdf'      && <AdminImportPDF />}
+      {tab === 'csv'      && <AdminUploadCSV token={token} />}
+      {tab === 'questoes' && <AdminQuestoes />}
     </div>
   );
 }
 
-/* ---------- Upload de CSV ---------- */
-function AdminUpload({ token }) {
+/* =========================================================
+   Import PDF via IA
+   ========================================================= */
+function AdminImportPDF() {
+  const [fase,      setFase]      = useStateAdmin('upload'); // upload | processando | preview | salvo
+  const [questoes,  setQuestoes]  = useStateAdmin([]);
+  const [resultado, setResultado] = useStateAdmin(null);
+  const [erro,      setErro]      = useStateAdmin(null);
+  const [editando,  setEditando]  = useStateAdmin(null); // questão em edição
+  const inputRef = useRefAdmin(null);
+
+  const processar = async (file) => {
+    setFase('processando');
+    setErro(null);
+    const form = new FormData();
+    form.append('pdf', file);
+    try {
+      const data = await adminFetch('/admin/import-pdf', { method: 'POST', headers: {}, body: form });
+      setQuestoes(data.questoes);
+      setFase('preview');
+    } catch (err) {
+      setErro(err.error || 'Erro ao processar PDF. Tente novamente.');
+      setFase('upload');
+    }
+  };
+
+  const salvar = async () => {
+    setFase('processando');
+    try {
+      const data = await adminFetch('/admin/bulk-save', {
+        method: 'POST',
+        body: JSON.stringify({ questoes }),
+      });
+      setResultado(data);
+      setFase('salvo');
+    } catch (err) {
+      setErro(err.error || 'Erro ao salvar questões.');
+      setFase('preview');
+    }
+  };
+
+  const removerQuestao = (idx) => setQuestoes(q => q.filter((_, i) => i !== idx));
+
+  const salvarEdicao = (idx, atualizada) => {
+    setQuestoes(q => q.map((item, i) => i === idx ? atualizada : item));
+    setEditando(null);
+  };
+
+  if (fase === 'upload') return (
+    <div className="admin-card">
+      <div className="admin-card-title">Upload do PDF da prova</div>
+      <p className="admin-card-sub">
+        Envie o PDF oficial da prova OAB. A IA extrairá todas as questões automaticamente.
+        Você poderá revisar e corrigir antes de salvar no banco.
+      </p>
+      {erro && <div className="admin-result error" style={{marginBottom:16}}><div className="admin-result-icon">✕</div><div className="admin-result-body"><div className="admin-result-sub">{erro}</div></div></div>}
+      <div className="admin-dropzone" onClick={() => inputRef.current?.click()}>
+        <div className="admin-dropzone-icon">✦</div>
+        <div className="admin-dropzone-label">Clique para selecionar o PDF da prova</div>
+        <div className="admin-dropzone-hint">A IA irá extrair e estruturar todas as questões</div>
+        <input ref={inputRef} type="file" accept=".pdf" style={{display:'none'}}
+               onChange={e => e.target.files[0] && processar(e.target.files[0])} />
+      </div>
+    </div>
+  );
+
+  if (fase === 'processando') return (
+    <div className="admin-card" style={{textAlign:'center', padding:64}}>
+      <div className="admin-spinner" style={{margin:'0 auto 24px'}} />
+      <div style={{fontSize:'var(--text-lg)', fontWeight:600}}>Processando com IA…</div>
+      <div style={{color:'var(--text-muted)', marginTop:8}}>
+        Aguardando DeepSeek extrair as questões do PDF. Pode levar alguns segundos.
+      </div>
+    </div>
+  );
+
+  if (fase === 'preview') return (
+    <div className="admin-questoes">
+      <div className="admin-card" style={{marginBottom:16}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:16}}>
+          <div>
+            <div className="admin-card-title">{questoes.length} questões extraídas — revise antes de salvar</div>
+            <p className="admin-card-sub">Clique em "Editar" para corrigir erros da IA. Clique em "✕" para remover uma questão.</p>
+          </div>
+          <div style={{display:'flex', gap:8}}>
+            <button className="btn btn-quiet" onClick={() => { setFase('upload'); setQuestoes([]); }}>← Recomeçar</button>
+            <button className="btn btn-cta" onClick={salvar}>Salvar {questoes.length} questões →</button>
+          </div>
+        </div>
+      </div>
+
+      {erro && <div className="admin-result error" style={{marginBottom:16}}><div className="admin-result-icon">✕</div><div className="admin-result-body"><div className="admin-result-sub">{erro}</div></div></div>}
+
+      <div className="admin-card">
+        <div className="admin-table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr><th>#</th><th>ID</th><th>Área</th><th>Gabarito</th><th>Enunciado</th><th></th></tr>
+            </thead>
+            <tbody>
+              {questoes.map((q, i) => (
+                <tr key={i}>
+                  <td>{i + 1}</td>
+                  <td className="admin-id">{q.id || '—'}</td>
+                  <td>{q.area_direito || '—'}</td>
+                  <td><span className="admin-gabarito">{q.gabarito || '?'}</span></td>
+                  <td className="admin-enunciado" title={q.enunciado}>{(q.enunciado || '').slice(0,80)}{q.enunciado?.length > 80 ? '…' : ''}</td>
+                  <td style={{whiteSpace:'nowrap'}}>
+                    <button className="btn btn-quiet btn-sm" style={{marginRight:4}} onClick={() => setEditando({ idx: i, q: { ...q } })}>Editar</button>
+                    <button className="btn btn-quiet btn-sm" style={{color:'var(--bordo)'}} onClick={() => removerQuestao(i)}>✕</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {editando && (
+        <QuestaoModal
+          questao={editando.q}
+          titulo="Editar questão (preview)"
+          onSave={q => salvarEdicao(editando.idx, q)}
+          onClose={() => setEditando(null)}
+        />
+      )}
+    </div>
+  );
+
+  if (fase === 'salvo') return (
+    <div className="admin-card">
+      <div className="admin-result success">
+        <div className="admin-result-icon">✓</div>
+        <div className="admin-result-body">
+          <div className="admin-result-title">Questões salvas com sucesso!</div>
+          <div className="admin-result-stats">
+            <span className="chip chip-green">+{resultado.inserted} inseridas</span>
+            {resultado.updated > 0 && <span className="chip chip-azul">{resultado.updated} atualizadas</span>}
+            {resultado.skipped > 0 && <span className="chip chip-neutral">{resultado.skipped} ignoradas</span>}
+          </div>
+          {resultado.errors?.length > 0 && (
+            <div className="admin-errors">
+              {resultado.errors.map((e, i) => <div key={i} className="admin-error-row">#{e.index}: {e.erro}</div>)}
+            </div>
+          )}
+        </div>
+        <button className="btn btn-quiet btn-sm" onClick={() => { setFase('upload'); setQuestoes([]); setResultado(null); }}>
+          Novo import
+        </button>
+      </div>
+    </div>
+  );
+
+  return null;
+}
+
+/* =========================================================
+   Modal de edição de questão (usado no preview e no CRUD)
+   ========================================================= */
+function QuestaoModal({ questao, titulo, onSave, onClose }) {
+  const [form, setForm] = useStateAdmin({ ...questao });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  return (
+    <div className="modal-backdrop fade-in" onClick={onClose}>
+      <div className="modal-panel fade-up" style={{maxWidth:760}} onClick={e => e.stopPropagation()}>
+        <header className="modal-head">
+          <div><div className="eyebrow">{titulo}</div><h2 className="modal-title">{form.id || 'Nova questão'}</h2></div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </header>
+
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16}}>
+          <Field label="ID único" value={form.id || ''} onChange={v => set('id', v)} />
+          <Field label="Banca" value={form.banca || ''} onChange={v => set('banca', v)} />
+          <Field label="Edição" value={form.edicao || ''} onChange={v => set('edicao', v)} />
+          <Field label="Ano" value={form.ano || ''} onChange={v => set('ano', v)} />
+          <div>
+            <label className="input-label">Área do direito</label>
+            <select className="select-field" value={form.area_direito || ''} onChange={e => set('area_direito', e.target.value)}>
+              <option value="">Selecione…</option>
+              {['civil','const','penal','trabalho','adm','etica','trib'].map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="input-label">Gabarito</label>
+            <select className="select-field" value={form.gabarito || ''} onChange={e => set('gabarito', e.target.value)}>
+              <option value="">—</option>
+              {['A','B','C','D'].map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="input-label">Dificuldade</label>
+            <select className="select-field" value={form.dificuldade || ''} onChange={e => set('dificuldade', e.target.value)}>
+              <option value="">—</option>
+              <option value="baixa">Baixa</option>
+              <option value="media">Média</option>
+              <option value="alta">Alta</option>
+            </select>
+          </div>
+          <Field label="Matéria" value={form.materia || ''} onChange={v => set('materia', v)} />
+        </div>
+
+        <TextArea label="Enunciado" value={form.enunciado || ''} onChange={v => set('enunciado', v)} rows={4} />
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginTop:12}}>
+          <TextArea label="Alternativa A" value={form.alternativa_a || ''} onChange={v => set('alternativa_a', v)} />
+          <TextArea label="Alternativa B" value={form.alternativa_b || ''} onChange={v => set('alternativa_b', v)} />
+          <TextArea label="Alternativa C" value={form.alternativa_c || ''} onChange={v => set('alternativa_c', v)} />
+          <TextArea label="Alternativa D" value={form.alternativa_d || ''} onChange={v => set('alternativa_d', v)} />
+        </div>
+
+        <div className="modal-actions" style={{marginTop:24}}>
+          <button className="btn btn-quiet" onClick={onClose}>Cancelar</button>
+          <button className="btn btn-primary" onClick={() => onSave(form)} disabled={!form.enunciado?.trim()}>
+            Salvar alterações
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, value, onChange }) {
+  return (
+    <div className="input-group" style={{marginBottom:0}}>
+      <label className="input-label">{label}</label>
+      <input className="input-field" value={value} onChange={e => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function TextArea({ label, value, onChange, rows = 2 }) {
+  return (
+    <div className="input-group" style={{marginBottom:0}}>
+      <label className="input-label">{label}</label>
+      <textarea className="input-field" rows={rows} value={value} onChange={e => onChange(e.target.value)}
+                style={{resize:'vertical', fontFamily:'inherit'}} />
+    </div>
+  );
+}
+
+/* =========================================================
+   Upload CSV (mantido do fluxo anterior)
+   ========================================================= */
+function AdminUploadCSV({ token }) {
   const [file, setFile] = useStateAdmin(null);
   const [preview, setPreview] = useStateAdmin(null);
-  const [status, setStatus] = useStateAdmin(null); // null | 'uploading' | 'success' | 'error'
+  const [status, setStatus] = useStateAdmin(null);
   const [result, setResult] = useStateAdmin(null);
   const [dragOver, setDragOver] = useStateAdmin(false);
   const inputRef = useRefAdmin(null);
 
   const handleFile = (f) => {
-    if (!f || !f.name.match(/\.(csv|txt)$/i)) {
-      setStatus('error');
-      setResult({ error: 'Selecione um arquivo .csv' });
-      return;
-    }
-    setFile(f);
-    setStatus(null);
-    setResult(null);
-    parsePreview(f);
+    if (!f || !f.name.match(/\.(csv|txt)$/i)) { setStatus('error'); setResult({ error: 'Selecione um arquivo .csv' }); return; }
+    setFile(f); setStatus(null); setResult(null); parsePreview(f);
   };
 
   const parsePreview = (f) => {
@@ -72,85 +309,49 @@ function AdminUpload({ token }) {
     reader.readAsText(f, 'UTF-8');
   };
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragOver(false);
-    handleFile(e.dataTransfer.files[0]);
-  };
-
   const handleUpload = async () => {
     if (!file) return;
     setStatus('uploading');
-    setResult(null);
-
     const formData = new FormData();
     formData.append('csv', file);
-
     try {
       const res = await fetch(`${API_BASE}/questions/upload`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
+        method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro desconhecido');
-      setStatus('success');
-      setResult(data);
+      setStatus('success'); setResult(data);
     } catch (err) {
-      setStatus('error');
-      setResult({ error: err.message });
+      setStatus('error'); setResult({ error: err.message });
     }
   };
 
-  const reset = () => {
-    setFile(null);
-    setPreview(null);
-    setStatus(null);
-    setResult(null);
-    if (inputRef.current) inputRef.current.value = '';
-  };
-
+  const reset = () => { setFile(null); setPreview(null); setStatus(null); setResult(null); if (inputRef.current) inputRef.current.value = ''; };
   const previewCols = ['id', 'banca', 'edicao', 'ano', 'area_direito', 'dificuldade', 'enunciado'];
 
   return (
     <div className="admin-upload-wrap">
       <div className="admin-card">
         <div className="admin-card-title">Arquivo CSV</div>
-        <p className="admin-card-sub">
-          O arquivo deve usar <code>;</code> como separador e ter as colunas:<br />
-          <code className="admin-cols">id · banca · prova · edicao · ano · data_aplicacao · tipo_prova · numero_questao · enunciado · comando · alternativa_a · alternativa_b · alternativa_c · alternativa_d · gabarito · area_direito · materia · tema · subtema · legislacao_ref · dificuldade · observacoes</code>
-        </p>
-
+        <p className="admin-card-sub">Separador <code>;</code> · colunas: <code>id · banca · edicao · enunciado · alternativa_a…d · gabarito · area_direito · dificuldade</code></p>
         {!file ? (
-          <div
-            className={`admin-dropzone ${dragOver ? 'is-over' : ''}`}
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            onClick={() => inputRef.current?.click()}
-          >
+          <div className={`admin-dropzone ${dragOver ? 'is-over' : ''}`}
+               onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)}
+               onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }}
+               onClick={() => inputRef.current?.click()}>
             <div className="admin-dropzone-icon">↑</div>
-            <div className="admin-dropzone-label">Arraste o CSV aqui ou clique para selecionar</div>
-            <div className="admin-dropzone-hint">Máximo 20 MB · formato UTF-8</div>
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".csv,.txt"
-              style={{ display: 'none' }}
-              onChange={(e) => handleFile(e.target.files[0])}
-            />
+            <div className="admin-dropzone-label">Arraste o CSV ou clique para selecionar</div>
+            <div className="admin-dropzone-hint">Máximo 20 MB · UTF-8</div>
+            <input ref={inputRef} type="file" accept=".csv,.txt" style={{display:'none'}} onChange={e => handleFile(e.target.files[0])} />
           </div>
         ) : (
           <div className="admin-file-info">
             <div className="admin-file-icon">📄</div>
             <div className="admin-file-details">
               <div className="admin-file-name">{file.name}</div>
-              <div className="admin-file-meta">
-                {(file.size / 1024).toFixed(1)} KB
-                {preview && <span> · {preview.total} questões detectadas</span>}
-              </div>
+              <div className="admin-file-meta">{(file.size/1024).toFixed(1)} KB{preview && ` · ${preview.total} questões`}</div>
             </div>
-            <button className="btn btn-quiet btn-sm" onClick={reset}>Trocar arquivo</button>
+            <button className="btn btn-quiet btn-sm" onClick={reset}>Trocar</button>
           </div>
         )}
       </div>
@@ -160,24 +361,12 @@ function AdminUpload({ token }) {
           <div className="admin-card-title">Pré-visualização <span className="admin-preview-badge">primeiras 5 linhas</span></div>
           <div className="admin-table-wrap">
             <table className="admin-table">
-              <thead>
-                <tr>
-                  {previewCols.map(c => <th key={c}>{c}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {preview.rows.map((row, i) => (
-                  <tr key={i}>
-                    {previewCols.map(c => (
-                      <td key={c} title={row[c]}>
-                        {c === 'enunciado'
-                          ? (row[c] || '').slice(0, 60) + (row[c]?.length > 60 ? '…' : '')
-                          : row[c] || <span className="admin-empty">—</span>}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
+              <thead><tr>{previewCols.map(c => <th key={c}>{c}</th>)}</tr></thead>
+              <tbody>{preview.rows.map((row, i) => (
+                <tr key={i}>{previewCols.map(c => (
+                  <td key={c} title={row[c]}>{c === 'enunciado' ? (row[c]||'').slice(0,60)+(row[c]?.length>60?'…':'') : row[c] || <span className="admin-empty">—</span>}</td>
+                ))}</tr>
+              ))}</tbody>
             </table>
           </div>
         </div>
@@ -185,17 +374,8 @@ function AdminUpload({ token }) {
 
       {file && (
         <div className="admin-upload-actions">
-          {status === null && (
-            <button className="btn btn-cta btn-lg" onClick={handleUpload}>
-              ↑ Enviar {preview?.total ? `${preview.total} questões` : 'questões'} para o banco
-            </button>
-          )}
-          {status === 'uploading' && (
-            <div className="admin-status uploading">
-              <div className="admin-spinner" />
-              Enviando e processando CSV…
-            </div>
-          )}
+          {status === null && <button className="btn btn-cta btn-lg" onClick={handleUpload}>↑ Enviar {preview?.total ? `${preview.total} questões` : 'questões'}</button>}
+          {status === 'uploading' && <div className="admin-status uploading"><div className="admin-spinner" /> Enviando…</div>}
           {status === 'success' && result && (
             <div className="admin-result success">
               <div className="admin-result-icon">✓</div>
@@ -205,27 +385,15 @@ function AdminUpload({ token }) {
                   <span className="chip chip-green">+{result.inserted} inseridas</span>
                   {result.updated > 0 && <span className="chip chip-azul">{result.updated} atualizadas</span>}
                   {result.skipped > 0 && <span className="chip chip-neutral">{result.skipped} ignoradas</span>}
-                  <span className="chip chip-neutral">Total: {result.total}</span>
                 </div>
-                {result.errors?.length > 0 && (
-                  <div className="admin-errors">
-                    <div className="admin-errors-title">Linhas com erro:</div>
-                    {result.errors.map((e, i) => (
-                      <div key={i} className="admin-error-row">Linha {e.linha}: {e.erro}</div>
-                    ))}
-                  </div>
-                )}
               </div>
-              <button className="btn btn-quiet btn-sm" onClick={reset}>Nova importação</button>
+              <button className="btn btn-quiet btn-sm" onClick={reset}>Novo import</button>
             </div>
           )}
           {status === 'error' && result && (
             <div className="admin-result error">
               <div className="admin-result-icon">✕</div>
-              <div className="admin-result-body">
-                <div className="admin-result-title">Erro na importação</div>
-                <div className="admin-result-sub">{result.error}</div>
-              </div>
+              <div className="admin-result-body"><div className="admin-result-title">Erro</div><div className="admin-result-sub">{result.error}</div></div>
               <button className="btn btn-quiet btn-sm" onClick={() => setStatus(null)}>Tentar novamente</button>
             </div>
           )}
@@ -235,70 +403,71 @@ function AdminUpload({ token }) {
   );
 }
 
-/* ---------- Listagem de questões no banco ---------- */
-function AdminQuestoes({ token }) {
+/* =========================================================
+   CRUD — questões no banco
+   ========================================================= */
+function AdminQuestoes() {
   const [questions, setQuestions] = useStateAdmin([]);
-  const [stats, setStats] = useStateAdmin(null);
-  const [loading, setLoading] = useStateAdmin(true);
-  const [error, setError] = useStateAdmin(null);
-  const [filters, setFilters] = useStateAdmin({ area: '', banca: '', dificuldade: '' });
-  const [page, setPage] = useStateAdmin(0);
+  const [stats,    setStats]     = useStateAdmin(null);
+  const [loading,  setLoading]   = useStateAdmin(true);
+  const [error,    setError]     = useStateAdmin(null);
+  const [filters,  setFilters]   = useStateAdmin({ area: '', banca: '', dificuldade: '' });
+  const [page,     setPage]      = useStateAdmin(0);
+  const [editando, setEditando]  = useStateAdmin(null);
   const limit = 20;
 
   const load = async () => {
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
-      const params = new URLSearchParams({
-        limit,
-        offset: page * limit,
+      const params = new URLSearchParams({ limit, offset: page * limit,
         ...(filters.area        && { area: filters.area }),
         ...(filters.banca       && { banca: filters.banca }),
         ...(filters.dificuldade && { dificuldade: filters.dificuldade }),
       });
-      const headers = { Authorization: `Bearer ${token}` };
-      const [qRes, sRes] = await Promise.all([
-        fetch(`${API_BASE}/questions?${params}`, { headers }),
-        fetch(`${API_BASE}/questions/stats`,    { headers }),
+      const [qData, sData] = await Promise.all([
+        adminFetch(`/questions?${params}`),
+        adminFetch('/questions/stats'),
       ]);
-      const qData = await qRes.json();
-      const sData = await sRes.json();
       setQuestions(qData.questions || []);
       setStats(sData);
-    } catch (err) {
-      setError('Não foi possível conectar ao servidor. Verifique se o backend está rodando.');
-    } finally {
-      setLoading(false);
-    }
+    } catch { setError('Erro ao carregar questões.'); }
+    finally { setLoading(false); }
   };
 
   useEffectAdmin(() => { load(); }, [page, filters]);
 
-  const handleFilter = (key, val) => {
-    setFilters(f => ({ ...f, [key]: val }));
-    setPage(0);
+  const handleFilter = (key, val) => { setFilters(f => ({ ...f, [key]: val })); setPage(0); };
+
+  const salvarEdicao = async (q) => {
+    try {
+      await adminFetch(`/admin/questions/${q.id}`, {
+        method: 'PUT', body: JSON.stringify(q),
+      });
+      setEditando(null);
+      load();
+    } catch (err) {
+      alert(err.error || 'Erro ao salvar');
+    }
+  };
+
+  const deletar = async (id) => {
+    if (!confirm('Tem certeza que deseja deletar esta questão?')) return;
+    try {
+      await adminFetch(`/admin/questions/${id}`, { method: 'DELETE' });
+      load();
+    } catch (err) {
+      alert(err.error || 'Erro ao deletar');
+    }
   };
 
   return (
     <div className="admin-questoes">
       {stats && (
         <div className="admin-stats-row">
-          <div className="stat-card">
-            <div className="stat-label">Total de questões</div>
-            <div className="stat-value">{parseInt(stats.total).toLocaleString('pt-BR')}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Bancas</div>
-            <div className="stat-value">{stats.bancas}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Áreas</div>
-            <div className="stat-value">{stats.areas}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Edições</div>
-            <div className="stat-value">{stats.edicoes}</div>
-          </div>
+          <div className="stat-card"><div className="stat-label">Total</div><div className="stat-value">{parseInt(stats.total).toLocaleString('pt-BR')}</div></div>
+          <div className="stat-card"><div className="stat-label">Bancas</div><div className="stat-value">{stats.bancas}</div></div>
+          <div className="stat-card"><div className="stat-label">Áreas</div><div className="stat-value">{stats.areas}</div></div>
+          <div className="stat-card"><div className="stat-label">Edições</div><div className="stat-value">{stats.edicoes}</div></div>
         </div>
       )}
 
@@ -306,11 +475,11 @@ function AdminQuestoes({ token }) {
         <div className="admin-filters">
           <select className="admin-select" value={filters.area} onChange={e => handleFilter('area', e.target.value)}>
             <option value="">Todas as áreas</option>
-            {(stats?.lista_areas || []).sort().map(a => <option key={a} value={a}>{a}</option>)}
+            {(stats?.lista_areas||[]).sort().map(a => <option key={a} value={a}>{a}</option>)}
           </select>
           <select className="admin-select" value={filters.banca} onChange={e => handleFilter('banca', e.target.value)}>
             <option value="">Todas as bancas</option>
-            {(stats?.lista_bancas || []).sort().map(b => <option key={b} value={b}>{b}</option>)}
+            {(stats?.lista_bancas||[]).sort().map(b => <option key={b} value={b}>{b}</option>)}
           </select>
           <select className="admin-select" value={filters.dificuldade} onChange={e => handleFilter('dificuldade', e.target.value)}>
             <option value="">Todas as dificuldades</option>
@@ -318,33 +487,16 @@ function AdminQuestoes({ token }) {
             <option value="média">Média</option>
             <option value="alta">Alta</option>
           </select>
-          <button className="btn btn-quiet btn-sm" onClick={() => { setFilters({ area: '', banca: '', dificuldade: '' }); setPage(0); }}>
-            Limpar filtros
-          </button>
+          <button className="btn btn-quiet btn-sm" onClick={() => { setFilters({ area:'', banca:'', dificuldade:'' }); setPage(0); }}>Limpar</button>
         </div>
 
-        {loading && (
-          <div className="admin-loading">
-            <div className="admin-spinner" /> Carregando questões…
-          </div>
-        )}
-
-        {error && (
-          <div className="admin-result error" style={{ marginTop: 16 }}>
-            <div className="admin-result-icon">!</div>
-            <div className="admin-result-body">
-              <div className="admin-result-title">Erro de conexão</div>
-              <div className="admin-result-sub">{error}</div>
-            </div>
-            <button className="btn btn-quiet btn-sm" onClick={load}>Tentar novamente</button>
-          </div>
-        )}
-
+        {loading && <div className="admin-loading"><div className="admin-spinner" /> Carregando…</div>}
+        {error   && <div className="admin-result error" style={{marginTop:16}}><div className="admin-result-icon">!</div><div className="admin-result-body"><div className="admin-result-sub">{error}</div></div><button className="btn btn-quiet btn-sm" onClick={load}>Tentar novamente</button></div>}
         {!loading && !error && questions.length === 0 && (
           <div className="admin-empty-state">
             <div className="admin-empty-icon">○</div>
             <div className="admin-empty-title">Nenhuma questão encontrada</div>
-            <div className="admin-empty-sub">Importe um CSV na aba "Importar CSV" para começar.</div>
+            <div className="admin-empty-sub">Importe um PDF ou CSV para começar.</div>
           </div>
         )}
 
@@ -352,37 +504,24 @@ function AdminQuestoes({ token }) {
           <div className="admin-table-wrap">
             <table className="admin-table">
               <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Banca</th>
-                  <th>Edição</th>
-                  <th>Ano</th>
-                  <th>Área</th>
-                  <th>Dificuldade</th>
-                  <th>Enunciado</th>
-                  <th>Gabarito</th>
-                </tr>
+                <tr><th>#</th><th>Banca</th><th>Edição</th><th>Área</th><th>Dif.</th><th>Enunciado</th><th>Gab.</th><th></th></tr>
               </thead>
               <tbody>
-                {questions.map((q) => (
+                {questions.map(q => (
                   <tr key={q.id}>
                     <td className="admin-id">{q.external_id || q.id}</td>
                     <td>{q.banca || <span className="admin-empty">—</span>}</td>
                     <td>{q.edicao || <span className="admin-empty">—</span>}</td>
-                    <td>{q.ano   || <span className="admin-empty">—</span>}</td>
                     <td>{q.area_direito || <span className="admin-empty">—</span>}</td>
-                    <td>
-                      {q.dificuldade
-                        ? <span className={`chip chip-${q.dificuldade === 'baixa' ? 'green' : q.dificuldade === 'alta' ? 'bordo' : 'amarelo'}`}>{q.dificuldade}</span>
-                        : <span className="admin-empty">—</span>}
-                    </td>
-                    <td className="admin-enunciado" title={q.enunciado}>
-                      {(q.enunciado || '').slice(0, 80)}{q.enunciado?.length > 80 ? '…' : ''}
-                    </td>
-                    <td>
-                      {q.gabarito
-                        ? <span className="admin-gabarito">{q.gabarito}</span>
-                        : <span className="admin-empty">—</span>}
+                    <td>{q.dificuldade ? <span className={`chip chip-${q.dificuldade==='baixa'?'green':q.dificuldade==='alta'?'bordo':'amarelo'}`}>{q.dificuldade}</span> : <span className="admin-empty">—</span>}</td>
+                    <td className="admin-enunciado" title={q.enunciado}>{(q.enunciado||'').slice(0,70)}{q.enunciado?.length>70?'…':''}</td>
+                    <td>{q.gabarito ? <span className="admin-gabarito">{q.gabarito}</span> : <span className="admin-empty">—</span>}</td>
+                    <td style={{whiteSpace:'nowrap'}}>
+                      <button className="btn btn-quiet btn-sm" style={{marginRight:4}}
+                              onClick={() => setEditando({ q: { ...q, id: q.id, area_direito: q.area_direito } })}>
+                        Editar
+                      </button>
+                      <button className="btn btn-quiet btn-sm" style={{color:'var(--bordo)'}} onClick={() => deletar(q.id)}>✕</button>
                     </td>
                   </tr>
                 ))}
@@ -391,14 +530,23 @@ function AdminQuestoes({ token }) {
           </div>
         )}
 
-        {!loading && (stats?.total > limit) && (
+        {!loading && stats?.total > limit && (
           <div className="admin-pagination">
-            <button className="btn btn-quiet btn-sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>← Anterior</button>
-            <span className="admin-page-info">Página {page + 1} · {parseInt(stats.total).toLocaleString('pt-BR')} questões</span>
-            <button className="btn btn-quiet btn-sm" disabled={(page + 1) * limit >= stats.total} onClick={() => setPage(p => p + 1)}>Próxima →</button>
+            <button className="btn btn-quiet btn-sm" disabled={page===0} onClick={() => setPage(p=>p-1)}>← Anterior</button>
+            <span className="admin-page-info">Página {page+1} · {parseInt(stats.total).toLocaleString('pt-BR')} questões</span>
+            <button className="btn btn-quiet btn-sm" disabled={(page+1)*limit>=stats.total} onClick={() => setPage(p=>p+1)}>Próxima →</button>
           </div>
         )}
       </div>
+
+      {editando && (
+        <QuestaoModal
+          questao={editando.q}
+          titulo="Editar questão"
+          onSave={salvarEdicao}
+          onClose={() => setEditando(null)}
+        />
+      )}
     </div>
   );
 }
