@@ -8,7 +8,7 @@ const router = express.Router();
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024, files: 2 },
   fileFilter: (_, file, cb) => {
     if (!file.originalname.match(/\.pdf$/i)) {
       return cb(new Error('Apenas arquivos PDF são aceitos'));
@@ -28,9 +28,18 @@ function makeClient() {
 }
 
 const PROMPT_SISTEMA = `Você é um especialista em provas da OAB (Ordem dos Advogados do Brasil).
-Receberá texto extraído de um PDF de prova e deverá extrair TODAS as questões de múltipla escolha.
+Você receberá o texto extraído de 1 ou 2 PDFs: o caderno de questões e/ou o gabarito oficial.
 
-Retorne APENAS um array JSON válido, sem markdown, sem explicações adicionais.
+Sua tarefa:
+1. Se receber APENAS o caderno de questões: extraia todas as questões. Use gabarito: null quando não disponível.
+2. Se receber APENAS o gabarito: isso não é suficiente. Retorne [].
+3. Se receber AMBOS (caderno + gabarito): extraia as questões e preencha o gabarito cruzando pelo número da questão.
+
+Como identificar cada documento:
+- Caderno de questões: contém enunciados longos, alternativas A/B/C/D, situações hipotéticas.
+- Gabarito: contém uma tabela simples com número da questão e letra (ex: "01 - B", "02 - A").
+
+Retorne APENAS um array JSON válido, sem markdown, sem explicações.
 
 Formato de cada questão:
 {
@@ -44,7 +53,7 @@ Formato de cada questão:
   "alternativa_b": "texto da alternativa B",
   "alternativa_c": "texto da alternativa C",
   "alternativa_d": "texto da alternativa D",
-  "gabarito": "A",
+  "gabarito": "B",
   "area_direito": "civil",
   "materia": "Responsabilidade Civil",
   "dificuldade": "media"
@@ -52,44 +61,50 @@ Formato de cada questão:
 
 Regras:
 - id: sempre no formato {EDICAO}-Q{numero com 3 dígitos}, ex: XLI-Q001
-- area_direito: use exatamente uma das opções: civil, const, penal, trabalho, adm, etica, trib
+- area_direito: exatamente uma de: civil, const, penal, trabalho, adm, etica, trib
 - dificuldade: baixa, media ou alta (estime pela complexidade)
-- gabarito: A, B, C ou D. Se não estiver no PDF, use null
-- Não invente alternativas. Se o texto estiver cortado, preserve o que existe`;
+- gabarito: A, B, C ou D — preencha a partir do gabarito oficial se disponível, senão null
+- Não invente alternativas. Preserve o texto exatamente como está no PDF`;
 
-// POST /api/admin/import-pdf
+// POST /api/admin/import-pdf  (aceita 1 ou 2 PDFs: caderno + gabarito)
 router.post('/import-pdf', requireAdmin, (req, res, next) => {
-  upload.single('pdf')(req, res, (err) => {
+  upload.array('pdfs', 2)(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });
     next();
   });
 }, async (req, res) => {
-  if (!req.file) {
+  const files = req.files || [];
+  if (files.length === 0) {
     return res.status(400).json({ error: 'Nenhum arquivo PDF enviado' });
   }
 
-  let pdfText;
-  try {
-    const pdfParse = require('pdf-parse');
-    const data = await pdfParse(req.file.buffer);
-    pdfText = data.text;
-  } catch (err) {
-    return res.status(422).json({ error: `Não foi possível ler o PDF: ${err.message}` });
+  const pdfParse = require('pdf-parse');
+  const textos = [];
+
+  for (const file of files) {
+    try {
+      const data = await pdfParse(file.buffer);
+      if (!data.text || data.text.trim().length < 50) {
+        return res.status(422).json({
+          error: `"${file.originalname}" não tem texto extraível (pode ser imagem escaneada)`,
+        });
+      }
+      textos.push({ nome: file.originalname, texto: data.text });
+    } catch (err) {
+      return res.status(422).json({ error: `Erro ao ler "${file.originalname}": ${err.message}` });
+    }
   }
 
-  if (!pdfText || pdfText.trim().length < 100) {
-    return res.status(422).json({ error: 'PDF sem texto extraível (pode ser uma imagem escaneada)' });
-  }
+  const conteudo = textos.length === 1
+    ? `Texto do PDF:\n\n${textos[0].texto}`
+    : textos.map((t, i) => `--- PDF ${i + 1}: ${t.nome} ---\n\n${t.texto}`).join('\n\n');
 
   try {
     const client = makeClient();
     const response = await client.messages.create({
       model: DEEPSEEK_MODEL,
       max_tokens: 16000,
-      messages: [{
-        role: 'user',
-        content: `${PROMPT_SISTEMA}\n\nTexto do PDF:\n\n${pdfText}`,
-      }],
+      messages: [{ role: 'user', content: `${PROMPT_SISTEMA}\n\n${conteudo}` }],
     });
 
     const raw = response.content[0]?.text || '';
@@ -100,10 +115,11 @@ router.post('/import-pdf', requireAdmin, (req, res, next) => {
 
     const questoes = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(questoes) || questoes.length === 0) {
-      return res.status(422).json({ error: 'Nenhuma questão encontrada no PDF' });
+      return res.status(422).json({ error: 'Nenhuma questão encontrada nos PDFs enviados' });
     }
 
-    res.json({ questoes, total: questoes.length });
+    const comGabarito = questoes.filter(q => q.gabarito).length;
+    res.json({ questoes, total: questoes.length, com_gabarito: comGabarito });
   } catch (err) {
     if (err.message.includes('DEEPSEEK_API_KEY')) {
       return res.status(500).json({ error: 'DEEPSEEK_API_KEY não configurada no servidor' });

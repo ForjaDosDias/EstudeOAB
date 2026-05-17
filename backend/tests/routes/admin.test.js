@@ -67,7 +67,7 @@ describe('POST /api/admin/import-pdf', () => {
     const res = await request(app)
       .post('/api/admin/import-pdf')
       .set('Authorization', `Bearer ${token()}`)
-      .attach('pdf', Buffer.from('conteudo'), 'arquivo.csv');
+      .attach('pdfs', Buffer.from('conteudo'), 'arquivo.csv');
     expect(res.status).toBe(400);
   });
 
@@ -76,16 +76,35 @@ describe('POST /api/admin/import-pdf', () => {
     const res = await request(app)
       .post('/api/admin/import-pdf')
       .set('Authorization', `Bearer ${token()}`)
-      .attach('pdf', Buffer.from('%PDF-1.4'), 'prova.pdf');
+      .attach('pdfs', Buffer.from('%PDF-1.4'), 'prova.pdf');
     expect(res.status).toBe(422);
-    expect(res.body.error).toMatch(/sem texto/i);
+    expect(res.body.error).toMatch(/não tem texto/i);
+  });
+
+  it('200 com 2 PDFs retorna questões com gabarito preenchido', async () => {
+    const questaoComGabarito = { ...fakeQuestao, gabarito: 'C' };
+    Anthropic.mockImplementation(() => ({
+      messages: { create: jest.fn().mockResolvedValue({ content: [{ text: JSON.stringify([questaoComGabarito]) }] }) },
+    }));
+    pdfParse.mockResolvedValue({ text: 'Questão 1. ' + 'x'.repeat(200) });
+
+    const res = await request(app)
+      .post('/api/admin/import-pdf')
+      .set('Authorization', `Bearer ${token()}`)
+      .attach('pdfs', Buffer.from('%PDF-1.4'), 'caderno.pdf')
+      .attach('pdfs', Buffer.from('%PDF-1.4'), 'gabarito.pdf');
+
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.com_gabarito).toBe(1);
+    expect(res.body.questoes[0].gabarito).toBe('C');
   });
 
   it('200 retorna questões extraídas pela IA', async () => {
     const res = await request(app)
       .post('/api/admin/import-pdf')
       .set('Authorization', `Bearer ${token()}`)
-      .attach('pdf', Buffer.from('%PDF-1.4'), 'prova.pdf');
+      .attach('pdfs', Buffer.from('%PDF-1.4'), 'prova.pdf');
     expect(res.status).toBe(200);
     expect(res.body.total).toBe(1);
     expect(res.body.questoes[0].id).toBe('XLI-Q001');
@@ -99,7 +118,7 @@ describe('POST /api/admin/import-pdf', () => {
     const res = await request(app)
       .post('/api/admin/import-pdf')
       .set('Authorization', `Bearer ${token()}`)
-      .attach('pdf', Buffer.from('%PDF-1.4'), 'prova.pdf');
+      .attach('pdfs', Buffer.from('%PDF-1.4'), 'prova.pdf');
     expect(res.status).toBe(502);
     expect(res.body.error).toMatch(/json válido/i);
   });

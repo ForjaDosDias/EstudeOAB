@@ -42,23 +42,34 @@ function AdminPage({ token, onNavigate }) {
    ========================================================= */
 function AdminImportPDF() {
   const [fase,      setFase]      = useStateAdmin('upload'); // upload | processando | preview | salvo
+  const [arquivos,  setArquivos]  = useStateAdmin([]);
   const [questoes,  setQuestoes]  = useStateAdmin([]);
   const [resultado, setResultado] = useStateAdmin(null);
   const [erro,      setErro]      = useStateAdmin(null);
-  const [editando,  setEditando]  = useStateAdmin(null); // questão em edição
+  const [editando,  setEditando]  = useStateAdmin(null);
+  const [comGabarito, setComGabarito] = useStateAdmin(0);
   const inputRef = useRefAdmin(null);
 
-  const processar = async (file) => {
+  const handleFiles = (files) => {
+    const pdfs = Array.from(files).filter(f => f.name.match(/\.pdf$/i)).slice(0, 2);
+    if (pdfs.length === 0) { setErro('Selecione arquivos PDF.'); return; }
+    setArquivos(pdfs);
+    setErro(null);
+  };
+
+  const processar = async () => {
+    if (arquivos.length === 0) return;
     setFase('processando');
     setErro(null);
     const form = new FormData();
-    form.append('pdf', file);
+    arquivos.forEach(f => form.append('pdfs', f));
     try {
       const data = await adminFetch('/admin/import-pdf', { method: 'POST', headers: {}, body: form });
       setQuestoes(data.questoes);
+      setComGabarito(data.com_gabarito || 0);
       setFase('preview');
     } catch (err) {
-      setErro(err.error || 'Erro ao processar PDF. Tente novamente.');
+      setErro(err.error || 'Erro ao processar. Tente novamente.');
       setFase('upload');
     }
   };
@@ -87,19 +98,48 @@ function AdminImportPDF() {
 
   if (fase === 'upload') return (
     <div className="admin-card">
-      <div className="admin-card-title">Upload do PDF da prova</div>
+      <div className="admin-card-title">Upload dos PDFs da prova</div>
       <p className="admin-card-sub">
-        Envie o PDF oficial da prova OAB. A IA extrairá todas as questões automaticamente.
-        Você poderá revisar e corrigir antes de salvar no banco.
+        Envie o <strong>caderno de questões</strong> e, opcionalmente, o <strong>gabarito oficial</strong> juntos.
+        A IA cruza os dois automaticamente e preenche as respostas corretas.
       </p>
       {erro && <div className="admin-result error" style={{marginBottom:16}}><div className="admin-result-icon">✕</div><div className="admin-result-body"><div className="admin-result-sub">{erro}</div></div></div>}
-      <div className="admin-dropzone" onClick={() => inputRef.current?.click()}>
+
+      <div className="admin-dropzone"
+           onDragOver={e => e.preventDefault()}
+           onDrop={e => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
+           onClick={() => inputRef.current?.click()}>
         <div className="admin-dropzone-icon">✦</div>
-        <div className="admin-dropzone-label">Clique para selecionar o PDF da prova</div>
-        <div className="admin-dropzone-hint">A IA irá extrair e estruturar todas as questões</div>
-        <input ref={inputRef} type="file" accept=".pdf" style={{display:'none'}}
-               onChange={e => e.target.files[0] && processar(e.target.files[0])} />
+        <div className="admin-dropzone-label">Clique ou arraste 1 ou 2 PDFs aqui</div>
+        <div className="admin-dropzone-hint">Caderno de questões + gabarito (opcional) · máx. 50 MB cada</div>
+        <input ref={inputRef} type="file" accept=".pdf" multiple style={{display:'none'}}
+               onChange={e => handleFiles(e.target.files)} />
       </div>
+
+      {arquivos.length > 0 && (
+        <div style={{marginTop:16}}>
+          <div style={{marginBottom:8, fontWeight:600, fontSize:'var(--text-sm)'}}>PDFs selecionados:</div>
+          {arquivos.map((f, i) => (
+            <div key={i} className="admin-file-info" style={{marginBottom:6}}>
+              <div className="admin-file-icon">📄</div>
+              <div className="admin-file-details">
+                <div className="admin-file-name">{f.name}</div>
+                <div className="admin-file-meta">{(f.size/1024).toFixed(1)} KB</div>
+              </div>
+              <button className="btn btn-quiet btn-sm"
+                      onClick={() => setArquivos(a => a.filter((_, j) => j !== i))}>✕</button>
+            </div>
+          ))}
+          <div style={{display:'flex', gap:8, marginTop:12}}>
+            <button className="btn btn-quiet" onClick={() => { setArquivos([]); if(inputRef.current) inputRef.current.value=''; }}>
+              Limpar
+            </button>
+            <button className="btn btn-cta" onClick={processar}>
+              ✦ Processar com IA {arquivos.length === 2 ? '(caderno + gabarito)' : '(caderno)'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -119,10 +159,15 @@ function AdminImportPDF() {
         <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:16}}>
           <div>
             <div className="admin-card-title">{questoes.length} questões extraídas — revise antes de salvar</div>
-            <p className="admin-card-sub">Clique em "Editar" para corrigir erros da IA. Clique em "✕" para remover uma questão.</p>
+            <p className="admin-card-sub">
+              {comGabarito > 0
+                ? <><strong>{comGabarito}</strong> com gabarito preenchido · </>
+                : 'Gabarito não encontrado — preencha manualmente · '}
+              Clique em "Editar" para corrigir erros da IA. "✕" para remover.
+            </p>
           </div>
           <div style={{display:'flex', gap:8}}>
-            <button className="btn btn-quiet" onClick={() => { setFase('upload'); setQuestoes([]); }}>← Recomeçar</button>
+            <button className="btn btn-quiet" onClick={() => { setFase('upload'); setQuestoes([]); setArquivos([]); setComGabarito(0); }}>← Recomeçar</button>
             <button className="btn btn-cta" onClick={salvar}>Salvar {questoes.length} questões →</button>
           </div>
         </div>
@@ -183,7 +228,7 @@ function AdminImportPDF() {
             </div>
           )}
         </div>
-        <button className="btn btn-quiet btn-sm" onClick={() => { setFase('upload'); setQuestoes([]); setResultado(null); }}>
+        <button className="btn btn-quiet btn-sm" onClick={() => { setFase('upload'); setQuestoes([]); setArquivos([]); setResultado(null); setComGabarito(0); }}>
           Novo import
         </button>
       </div>
