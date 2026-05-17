@@ -339,9 +339,13 @@ function ReviewModal({ answer, onClose }) {
               <div className="qcard-feedback-sub">
                 Resposta correta: letra <strong>{answer.correta}</strong>
                 {answer.escolhida && <> · Você marcou <strong>{answer.escolhida}</strong></>}
+                {answer.legislacao_ref && <> · <span className="qcard-area-mono" style={{display:'inline'}}>{answer.legislacao_ref}</span></>}
               </div>
             </div>
           </div>
+          {answer.explicacao && (
+            <p className="qcard-feedback-body">{answer.explicacao}</p>
+          )}
         </div>
 
         <div className="modal-actions">

@@ -284,10 +284,14 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
                     </div>
                     <div className="qcard-feedback-sub">
                       Gabarito: letra <strong>{correta}</strong>
+                      {feedbackAPI?.legislacao_ref && <> · <span className="qcard-area-mono" style={{display:'inline'}}>{feedbackAPI.legislacao_ref}</span></>}
                     </div>
                   </div>
                   {acertou && <span className="chip chip-amarelo">+15 XP</span>}
                 </div>
+                {feedbackAPI?.explicacao && (
+                  <p className="qcard-feedback-body">{feedbackAPI.explicacao}</p>
+                )}
               </div>
             )}
           </div>

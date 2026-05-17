@@ -426,6 +426,12 @@ function QuestaoModal({ questao, titulo, onSave, onClose }) {
           <TextArea label="Alternativa C" value={form.alternativa_c || ''} onChange={v => set('alternativa_c', v)} />
           <TextArea label="Alternativa D" value={form.alternativa_d || ''} onChange={v => set('alternativa_d', v)} />
         </div>
+        <div style={{marginTop:12}}>
+          <Field label="Referência legal (ex: Art. 186 · CC/2002)" value={form.legislacao_ref || ''} onChange={v => set('legislacao_ref', v)} />
+        </div>
+        <div style={{marginTop:12}}>
+          <TextArea label="Explicação da resposta" value={form.explicacao || ''} onChange={v => set('explicacao', v)} rows={4} />
+        </div>
 
         <div className="modal-actions" style={{marginTop:24}}>
           <button className="btn btn-quiet" onClick={onClose}>Cancelar</button>
@@ -618,6 +624,8 @@ function AdminQuestoes() {
 
   const handleFilter = (key, val) => { setFilters(f => ({ ...f, [key]: val })); setPage(0); };
 
+  const [gerando, setGerando] = useStateAdmin(null); // id da questão sendo gerada
+
   const salvarEdicao = async (q) => {
     try {
       await adminFetch(`/admin/questions/${q.id}`, {
@@ -637,6 +645,18 @@ function AdminQuestoes() {
       load();
     } catch (err) {
       alert(err.error || 'Erro ao deletar');
+    }
+  };
+
+  const gerarExplicacao = async (id) => {
+    setGerando(id);
+    try {
+      await adminFetch(`/admin/questions/${id}/explicacao`, { method: 'POST' });
+      load(); // recarrega tabela com explicação salva
+    } catch (err) {
+      alert(err.error || 'Erro ao gerar explicação');
+    } finally {
+      setGerando(null);
     }
   };
 
@@ -684,7 +704,7 @@ function AdminQuestoes() {
           <div className="admin-table-wrap">
             <table className="admin-table">
               <thead>
-                <tr><th>#</th><th>Banca</th><th>Edição</th><th>Área</th><th>Dif.</th><th>Enunciado</th><th>Gab.</th><th></th></tr>
+                <tr><th>#</th><th>Banca</th><th>Edição</th><th>Área</th><th>Dif.</th><th>Enunciado</th><th>Gab.</th><th>Expl.</th><th></th></tr>
               </thead>
               <tbody>
                 {questions.map(q => (
@@ -696,7 +716,20 @@ function AdminQuestoes() {
                     <td>{q.dificuldade ? <span className={`chip chip-${q.dificuldade==='baixa'?'green':q.dificuldade==='alta'?'bordo':'amarelo'}`}>{q.dificuldade}</span> : <span className="admin-empty">—</span>}</td>
                     <td className="admin-enunciado" title={q.enunciado}>{(q.enunciado||'').slice(0,70)}{q.enunciado?.length>70?'…':''}</td>
                     <td>{q.gabarito ? <span className="admin-gabarito">{q.gabarito}</span> : <span className="admin-empty">—</span>}</td>
+                    <td style={{textAlign:'center'}}>
+                      {q.explicacao
+                        ? <span title={q.explicacao} style={{color:'var(--green)', cursor:'help'}}>✓</span>
+                        : <span style={{color:'var(--text-muted)'}}>—</span>}
+                    </td>
                     <td style={{whiteSpace:'nowrap'}}>
+                      {!q.explicacao && q.gabarito && (
+                        <button className="btn btn-quiet btn-sm" style={{marginRight:4}}
+                                disabled={gerando === q.id}
+                                onClick={() => gerarExplicacao(q.id)}
+                                title="Gerar explicação com IA">
+                          {gerando === q.id ? '…' : '✦'}
+                        </button>
+                      )}
                       <button className="btn btn-quiet btn-sm" style={{marginRight:4}}
                               onClick={() => setEditando({ q: { ...q, id: q.id, area_direito: q.area_direito } })}>
                         Editar

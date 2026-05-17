@@ -60,7 +60,9 @@ Formato de cada questão:
   "gabarito": "B",
   "area_direito": "civil",
   "materia": "Responsabilidade Civil",
-  "dificuldade": "media"
+  "dificuldade": "media",
+  "legislacao_ref": "Art. 186 · CC/2002",
+  "explicacao": "Explicação didática de por que a alternativa correta está certa e as outras estão erradas."
 }
 
 Regras:
@@ -68,6 +70,8 @@ Regras:
 - area_direito: exatamente uma de: civil, const, penal, trabalho, adm, etica, trib
 - dificuldade: baixa, media ou alta (estime pela complexidade)
 - gabarito: A, B, C ou D — preencha a partir do gabarito oficial se disponível, senão null
+- legislacao_ref: artigo e diploma legal mais relevante (ex: "Art. 5º, X · CF/88"). Use null se não houver.
+- explicacao: explique por que o gabarito está correto e por que as outras alternativas estão erradas. Use null se o gabarito for null.
 - Não invente alternativas. Preserve o texto exatamente como está no PDF`;
 
 // POST /api/admin/import-pdf — recebe PDFs, inicia job em background, retorna job_id imediatamente
@@ -233,8 +237,8 @@ router.post('/bulk-save', requireAdmin, async (req, res) => {
           `INSERT INTO questions (
              external_id, banca, edicao, ano, numero_questao, enunciado,
              alternativa_a, alternativa_b, alternativa_c, alternativa_d,
-             gabarito, area_direito, materia, dificuldade
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+             gabarito, area_direito, materia, dificuldade, legislacao_ref, explicacao
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
            ON CONFLICT (external_id) DO UPDATE SET
              banca = EXCLUDED.banca, edicao = EXCLUDED.edicao,
              ano = EXCLUDED.ano, numero_questao = EXCLUDED.numero_questao,
@@ -242,7 +246,8 @@ router.post('/bulk-save', requireAdmin, async (req, res) => {
              alternativa_a = EXCLUDED.alternativa_a, alternativa_b = EXCLUDED.alternativa_b,
              alternativa_c = EXCLUDED.alternativa_c, alternativa_d = EXCLUDED.alternativa_d,
              gabarito = EXCLUDED.gabarito, area_direito = EXCLUDED.area_direito,
-             materia = EXCLUDED.materia, dificuldade = EXCLUDED.dificuldade
+             materia = EXCLUDED.materia, dificuldade = EXCLUDED.dificuldade,
+             legislacao_ref = EXCLUDED.legislacao_ref, explicacao = EXCLUDED.explicacao
            RETURNING (xmax = 0) AS is_insert`,
           [
             q.id || null, q.banca || null, q.edicao || null,
@@ -251,6 +256,7 @@ router.post('/bulk-save', requireAdmin, async (req, res) => {
             q.alternativa_c || null, q.alternativa_d || null,
             q.gabarito || null, q.area_direito || null,
             q.materia || null, q.dificuldade || null,
+            q.legislacao_ref || null, q.explicacao || null,
           ]
         );
         result.rows[0]?.is_insert ? inserted++ : updated++;
@@ -275,7 +281,8 @@ router.post('/bulk-save', requireAdmin, async (req, res) => {
 router.put('/questions/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { enunciado, alternativa_a, alternativa_b, alternativa_c, alternativa_d,
-          gabarito, area_direito, banca, edicao, ano, materia, dificuldade } = req.body;
+          gabarito, area_direito, banca, edicao, ano, materia, dificuldade,
+          legislacao_ref, explicacao } = req.body;
 
   if (!enunciado?.trim()) {
     return res.status(400).json({ error: 'Enunciado é obrigatório' });
@@ -285,17 +292,81 @@ router.put('/questions/:id', requireAdmin, async (req, res) => {
     const result = await pool.query(
       `UPDATE questions SET
          enunciado=$1, alternativa_a=$2, alternativa_b=$3, alternativa_c=$4, alternativa_d=$5,
-         gabarito=$6, area_direito=$7, banca=$8, edicao=$9, ano=$10, materia=$11, dificuldade=$12
-       WHERE id=$13 RETURNING *`,
+         gabarito=$6, area_direito=$7, banca=$8, edicao=$9, ano=$10, materia=$11, dificuldade=$12,
+         legislacao_ref=$13, explicacao=$14
+       WHERE id=$15 RETURNING *`,
       [enunciado, alternativa_a||null, alternativa_b||null, alternativa_c||null, alternativa_d||null,
        gabarito||null, area_direito||null, banca||null, edicao||null,
-       ano ? parseInt(ano) : null, materia||null, dificuldade||null, id]
+       ano ? parseInt(ano) : null, materia||null, dificuldade||null,
+       legislacao_ref||null, explicacao||null, id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Questão não encontrada' });
     res.json(result.rows[0]);
   } catch (err) {
     console.error('PUT /admin/questions error:', err.message);
     res.status(500).json({ error: 'Erro ao atualizar questão' });
+  }
+});
+
+// POST /api/admin/questions/:id/explicacao — gera explicação via DeepSeek
+router.post('/questions/:id/explicacao', requireAdmin, async (req, res) => {
+  try {
+    const qRes = await pool.query(
+      `SELECT id, banca, edicao, ano, numero_questao, enunciado, comando,
+              alternativa_a, alternativa_b, alternativa_c, alternativa_d,
+              gabarito, area_direito, materia, legislacao_ref
+       FROM questions WHERE id = $1`,
+      [req.params.id]
+    );
+    const q = qRes.rows[0];
+    if (!q) return res.status(404).json({ error: 'Questão não encontrada' });
+    if (!q.gabarito) return res.status(400).json({ error: 'Questão sem gabarito — defina o gabarito antes de gerar a explicação' });
+
+    const prompt = `Você é um especialista em provas da OAB. Analise a questão abaixo e retorne APENAS um JSON com dois campos.
+
+Questão:
+Banca: ${q.banca || 'OAB'} | Edição: ${q.edicao || ''} | Área: ${q.area_direito || ''} | Matéria: ${q.materia || ''}
+${q.enunciado}
+${q.comando ? `\n${q.comando}` : ''}
+
+A) ${q.alternativa_a || ''}
+B) ${q.alternativa_b || ''}
+C) ${q.alternativa_c || ''}
+D) ${q.alternativa_d || ''}
+
+Gabarito oficial: ${q.gabarito}
+${q.legislacao_ref ? `Referência já conhecida: ${q.legislacao_ref}` : ''}
+
+Retorne APENAS este JSON (sem markdown):
+{
+  "explicacao": "Explicação didática e objetiva de por que a alternativa ${q.gabarito} está correta e por que as outras estão erradas. Máximo 3 parágrafos.",
+  "legislacao_ref": "Artigo e diploma legal principal, ex: Art. 186 · CC/2002"
+}`;
+
+    const client = makeClient();
+    const response = await client.messages.create({
+      model: DEEPSEEK_MODEL,
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const raw = response.content[0]?.text || '';
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return res.status(502).json({ error: 'IA não retornou JSON válido' });
+    }
+
+    const { explicacao, legislacao_ref } = JSON.parse(jsonMatch[0]);
+
+    await pool.query(
+      'UPDATE questions SET explicacao=$1, legislacao_ref=COALESCE($2, legislacao_ref) WHERE id=$3',
+      [explicacao || null, legislacao_ref || null, req.params.id]
+    );
+
+    res.json({ explicacao, legislacao_ref });
+  } catch (err) {
+    console.error('POST /admin/questions/:id/explicacao error:', err.message);
+    res.status(502).json({ error: `Erro ao gerar explicação: ${err.message}` });
   }
 });
 

@@ -39,7 +39,8 @@ router.post('/', requireAuth, async (req, res) => {
 
     const questoesRes = await client.query(
       `SELECT id, enunciado, comando, alternativa_a, alternativa_b,
-              alternativa_c, alternativa_d, area_direito, banca, edicao, dificuldade
+              alternativa_c, alternativa_d, area_direito, banca, edicao, dificuldade,
+              legislacao_ref, explicacao
        FROM questions
        WHERE enunciado IS NOT NULL ${areaFilter}
        ORDER BY RANDOM()

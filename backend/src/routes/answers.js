@@ -29,7 +29,7 @@ router.post('/', requireAuth, async (req, res) => {
     if (session.concluida) return res.status(409).json({ error: 'Sessão já foi concluída' });
 
     const questionRes = await pool.query(
-      'SELECT gabarito FROM questions WHERE id = $1',
+      'SELECT gabarito, explicacao, legislacao_ref FROM questions WHERE id = $1',
       [question_id]
     );
     const question = questionRes.rows[0];
@@ -45,7 +45,12 @@ router.post('/', requireAuth, async (req, res) => {
       [userId, session_id, question_id, escolhidaUp, correta, acertou, tempo_s]
     );
 
-    res.status(201).json({ acertou, correta });
+    res.status(201).json({
+      acertou,
+      correta,
+      explicacao:    question.explicacao    || null,
+      legislacao_ref: question.legislacao_ref || null,
+    });
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Questão já respondida nesta sessão' });
@@ -85,7 +90,8 @@ router.get('/history', requireAuth, async (req, res) => {
     const dataRes = await pool.query(
       `SELECT a.id, a.escolhida, a.correta, a.acertou, a.tempo_s, a.respondida_em,
               q.id AS question_id, q.enunciado, q.banca, q.edicao, q.area_direito,
-              q.gabarito, q.alternativa_a, q.alternativa_b, q.alternativa_c, q.alternativa_d
+              q.gabarito, q.alternativa_a, q.alternativa_b, q.alternativa_c, q.alternativa_d,
+              q.legislacao_ref, q.explicacao
        FROM answers a
        JOIN questions q ON q.id = a.question_id
        ${where}

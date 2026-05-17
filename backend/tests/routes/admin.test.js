@@ -164,6 +164,71 @@ describe('POST /api/admin/import-pdf', () => {
   });
 });
 
+// ── POST /api/admin/questions/:id/explicacao ─────────────────────────────────
+
+describe('POST /api/admin/questions/:id/explicacao', () => {
+  const fakeQuestaoCompleta = {
+    id: 1, banca: 'FGV', edicao: 'XLI', ano: 2024, numero_questao: 1,
+    enunciado: 'Qual é o prazo?', comando: null,
+    alternativa_a: 'Um ano', alternativa_b: 'Dois anos',
+    alternativa_c: 'Três anos', alternativa_d: 'Cinco anos',
+    gabarito: 'C', area_direito: 'civil', materia: 'Prazos', legislacao_ref: null,
+  };
+
+  beforeEach(() => {
+    process.env.DEEPSEEK_API_KEY = 'sk-test';
+    Anthropic.mockImplementation(() => ({
+      messages: { create: jest.fn().mockResolvedValue({
+        content: [{ text: '{"explicacao":"O prazo é de três anos.","legislacao_ref":"Art. 206 · CC/2002"}' }],
+        stop_reason: 'end_turn',
+      }) },
+    }));
+  });
+
+  it('401 sem token', async () => {
+    const res = await request(app).post('/api/admin/questions/1/explicacao');
+    expect(res.status).toBe(401);
+  });
+
+  it('403 para usuário comum', async () => {
+    const res = await request(app)
+      .post('/api/admin/questions/1/explicacao')
+      .set('Authorization', `Bearer ${token('user')}`);
+    expect(res.status).toBe(403);
+  });
+
+  it('404 quando questão não existe', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [] });
+    const res = await request(app)
+      .post('/api/admin/questions/999/explicacao')
+      .set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(404);
+  });
+
+  it('400 quando questão não tem gabarito', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{ ...fakeQuestaoCompleta, gabarito: null }] });
+    const res = await request(app)
+      .post('/api/admin/questions/1/explicacao')
+      .set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/gabarito/i);
+  });
+
+  it('200 gera e salva explicação', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [fakeQuestaoCompleta] })  // SELECT questão
+      .mockResolvedValueOnce({ rows: [] });                    // UPDATE
+
+    const res = await request(app)
+      .post('/api/admin/questions/1/explicacao')
+      .set('Authorization', `Bearer ${token()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.explicacao).toBe('O prazo é de três anos.');
+    expect(res.body.legislacao_ref).toBe('Art. 206 · CC/2002');
+  });
+});
+
 // ── POST /api/admin/bulk-save ─────────────────────────────────────────────────
 
 describe('POST /api/admin/bulk-save', () => {

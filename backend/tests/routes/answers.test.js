@@ -15,8 +15,8 @@ function token(userId = 1) {
   return jwt.sign({ userId, email: 'u@oab.com', role: 'user' }, JWT_SECRET);
 }
 
-const fakeSession = { user_id: 1, concluida: false };
-const fakeQuestion = { gabarito: 'A' };
+const fakeSession  = { user_id: 1, concluida: false };
+const fakeQuestion = { gabarito: 'A', explicacao: 'A responsabilidade é subjetiva.', legislacao_ref: 'Art. 186 · CC/2002' };
 const fakeAnswer = {
   id: 1, escolhida: 'A', correta: 'A', acertou: true, tempo_s: 30,
   respondida_em: new Date().toISOString(),
@@ -77,11 +77,11 @@ describe('POST /api/answers', () => {
     expect(res.body.error).toMatch(/concluída/);
   });
 
-  it('201 com acertou: true quando escolhida === gabarito', async () => {
+  it('201 com acertou: true, correta, explicacao e legislacao_ref', async () => {
     pool.query
-      .mockResolvedValueOnce({ rows: [fakeSession] })        // SELECT session
-      .mockResolvedValueOnce({ rows: [fakeQuestion] })       // SELECT question
-      .mockResolvedValueOnce({ rows: [] });                  // INSERT answer
+      .mockResolvedValueOnce({ rows: [fakeSession] })
+      .mockResolvedValueOnce({ rows: [fakeQuestion] })
+      .mockResolvedValueOnce({ rows: [] });
 
     const res = await request(app)
       .post('/api/answers')
@@ -91,6 +91,8 @@ describe('POST /api/answers', () => {
     expect(res.status).toBe(201);
     expect(res.body.acertou).toBe(true);
     expect(res.body.correta).toBe('A');
+    expect(res.body.explicacao).toBe('A responsabilidade é subjetiva.');
+    expect(res.body.legislacao_ref).toBe('Art. 186 · CC/2002');
   });
 
   it('201 com acertou: false quando escolhida !== gabarito', async () => {
