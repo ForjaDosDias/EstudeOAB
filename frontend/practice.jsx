@@ -57,11 +57,22 @@ function PracticeFlow({ user, onUserUpdate, onExit, onNavigate }) {
 /* ---------- Setup ---------- */
 function PracticeSetup({ user, config, setConfig, onStart, onExit, loading, erro }) {
   const { AREAS } = window.AppData;
+  const TOTAIS_POR_MODO = { rapida: 5, simulado: 80 };
+
   const modos = [
     { id: 'rapida',        label: 'Sessão rápida',  meta: '5 questões · ~10 min', icon: '⚡' },
     { id: 'simulado',      label: 'Simulado',       meta: '80 questões · 4h',     icon: '🎯' },
     { id: 'personalizado', label: 'Personalizado',  meta: 'Você escolhe tudo',     icon: '⚙' },
   ];
+
+  const selecionarModo = (id) => {
+    setConfig(c => ({
+      ...c,
+      modo: id,
+      total: TOTAIS_POR_MODO[id] ?? c.total, // personalizado mantém o total atual
+    }));
+  };
+
   const toggle = (id) => setConfig(c => ({ ...c, areas: c.areas.includes(id) ? c.areas.filter(a => a !== id) : [...c.areas, id] }));
 
   return (
@@ -81,13 +92,33 @@ function PracticeSetup({ user, config, setConfig, onStart, onExit, loading, erro
           {modos.map(m => (
             <button key={m.id}
                     className={`practice-mode ${config.modo === m.id ? 'is-active' : ''}`}
-                    onClick={() => setConfig(c => ({ ...c, modo: m.id }))}>
+                    onClick={() => selecionarModo(m.id)}>
               <div className="practice-mode-ic">{m.icon}</div>
               <div className="practice-mode-label">{m.label}</div>
               <div className="practice-mode-meta">{m.meta}</div>
             </button>
           ))}
         </div>
+
+        {config.modo === 'personalizado' && (
+          <div style={{marginTop:24}}>
+            <div className="reg-section-title">Número de questões</div>
+            <div style={{display:'flex', alignItems:'center', gap:16, marginTop:8}}>
+              <input
+                type="range" min="5" max="80" step="5"
+                value={config.total}
+                onChange={e => setConfig(c => ({ ...c, total: parseInt(e.target.value) }))}
+                style={{flex:1, accentColor:'var(--bordo)'}}
+              />
+              <span style={{fontFamily:'var(--font-mono)', fontWeight:700, fontSize:'var(--text-lg)', minWidth:40, textAlign:'right'}}>
+                {config.total}
+              </span>
+            </div>
+            <div style={{display:'flex', justifyContent:'space-between', fontSize:'var(--text-sm)', color:'var(--text-muted)', marginTop:4}}>
+              <span>5 mín.</span><span>80 máx.</span>
+            </div>
+          </div>
+        )}
 
         <div className="reg-section-title" style={{marginTop:32}}>Áreas</div>
         <div className="reg-areas">
@@ -114,7 +145,7 @@ function PracticeSetup({ user, config, setConfig, onStart, onExit, loading, erro
             <div className="stat-label">Sua sessão</div>
             <div className="practice-summary-line">
               <strong>{config.total} questões</strong>
-              <span>· {config.areas.length} áreas</span>
+              <span>· {config.areas.length} área{config.areas.length !== 1 ? 's' : ''}</span>
               <span>· ≈ {config.total * 2} min</span>
               <span className="chip chip-amarelo">+{config.total * 15} XP esperados</span>
             </div>
