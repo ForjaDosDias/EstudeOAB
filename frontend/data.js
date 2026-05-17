@@ -12,10 +12,13 @@ const AREAS = {
 
 function apiFetch(path, opts = {}) {
   const token = localStorage.getItem('oab_token');
+  const isFormData = opts.body instanceof FormData;
   return fetch('/api' + path, {
     ...opts,
     headers: {
-      'Content-Type': 'application/json',
+      // FormData: não setar Content-Type — o browser adiciona automaticamente
+      // com o boundary correto para multipart/form-data
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(opts.headers || {}),
     },
