@@ -107,7 +107,7 @@ function App() {
         onLogout={doLogout}
       >
         {page === 'dashboard' && <window.Shell.Dashboard user={user} onPracticeStart={handlePracticeStart} onNavigate={handleNavigate} />}
-        {page === 'practice'  && <window.Practice.PracticeFlow user={user} onExit={() => setPage('dashboard')} onNavigate={handleNavigate} />}
+        {page === 'practice'  && <window.Practice.PracticeFlow user={user} token={token} onUserUpdate={setUser} onExit={() => setPage('dashboard')} onNavigate={handleNavigate} />}
         {page === 'stats'     && <window.Stats.StatsPage onNavigate={handleNavigate} />}
         {page === 'review'    && <window.Stats.StatsPage onNavigate={handleNavigate} />}
         {page === 'admin'     && user?.role === 'admin' && <window.Admin.AdminPage token={token} onNavigate={handleNavigate} />}

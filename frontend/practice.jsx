@@ -1,39 +1,61 @@
 /* global React */
-const { useState: useStatePractice, useEffect: useEffectPractice, useMemo: useMemoPractice } = React;
+const { useState: useStatePractice, useEffect: useEffectPractice } = React;
+
+/* Helper — mapeia questão da API para o formato interno */
+function formatarQuestao(q) {
+  return {
+    ...q,
+    area: q.area_direito,
+    opcoes: [
+      { letra: 'A', texto: q.alternativa_a },
+      { letra: 'B', texto: q.alternativa_b },
+      { letra: 'C', texto: q.alternativa_c },
+      { letra: 'D', texto: q.alternativa_d },
+    ].filter(o => o.texto),
+  };
+}
 
 /* =========================================================
    Jornada de prática — setup → questionário → resultado
    ========================================================= */
-function PracticeFlow({ user, onExit, onNavigate }) {
-  const { QUESTIONS } = window.AppData;
-  const [phase, setPhase] = useStatePractice('setup'); // setup | run | result
-  const [config, setConfig] = useStatePractice({
-    modo: 'rapida', // rapida | simulado | personalizado
-    areas: ['civil', 'const', 'etica'],
-    total: 5,
-  });
+function PracticeFlow({ user, onUserUpdate, onExit, onNavigate }) {
+  const [phase,   setPhase]   = useStatePractice('setup');
+  const [config,  setConfig]  = useStatePractice({ modo: 'rapida', areas: ['civil', 'const', 'etica'], total: 5 });
   const [session, setSession] = useStatePractice(null);
+  const [loading, setLoading] = useStatePractice(false);
+  const [erro,    setErro]    = useStatePractice(null);
 
-  const startSession = () => {
-    const list = QUESTIONS.slice(0, config.total);
-    setSession({
-      questoes: list,
-      respostas: [], // {qId, escolhida, correta, tempo}
-      idx: 0,
-    });
-    setPhase('run');
+  const startSession = async () => {
+    setLoading(true);
+    setErro(null);
+    try {
+      const data = await window.apiFetch('/sessions', {
+        method: 'POST',
+        body: JSON.stringify({ modo: config.modo, areas: config.areas, total_questoes: config.total }),
+      });
+      if (!data.questoes || data.questoes.length === 0) {
+        setErro('Nenhuma questão encontrada para as áreas selecionadas. Peça ao administrador para importar questões.');
+        return;
+      }
+      setSession({ id: data.id, questoes: data.questoes.map(formatarQuestao), respostas: [], idx: 0 });
+      setPhase('run');
+    } catch (err) {
+      setErro(err.error || 'Erro ao iniciar sessão. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const finishSession = () => setPhase('result');
 
-  if (phase === 'setup')  return <PracticeSetup user={user} config={config} setConfig={setConfig} onStart={startSession} onExit={onExit} />;
+  if (phase === 'setup')  return <PracticeSetup user={user} config={config} setConfig={setConfig} onStart={startSession} onExit={onExit} loading={loading} erro={erro} />;
   if (phase === 'run')    return <PracticeRunner session={session} setSession={setSession} onFinish={finishSession} onExit={onExit} />;
-  if (phase === 'result') return <PracticeResult session={session} onRetry={() => setPhase('setup')} onExit={onExit} onNavigate={onNavigate} />;
+  if (phase === 'result') return <PracticeResult session={session} onRetry={() => { setSession(null); setPhase('setup'); }} onExit={onExit} onNavigate={onNavigate} onUserUpdate={onUserUpdate} />;
   return null;
 }
 
 /* ---------- Setup ---------- */
-function PracticeSetup({ user, config, setConfig, onStart, onExit }) {
+function PracticeSetup({ user, config, setConfig, onStart, onExit, loading, erro }) {
   const { AREAS } = window.AppData;
   const modos = [
     { id: 'rapida',        label: 'Sessão rápida',  meta: '5 questões · ~10 min', icon: '⚡' },
@@ -81,6 +103,12 @@ function PracticeSetup({ user, config, setConfig, onStart, onExit }) {
           })}
         </div>
 
+        {erro && (
+          <div className="login-error" style={{marginTop:16}}>
+            <span>✕</span> {erro}
+          </div>
+        )}
+
         <div className="practice-setup-summary">
           <div>
             <div className="stat-label">Sua sessão</div>
@@ -91,8 +119,8 @@ function PracticeSetup({ user, config, setConfig, onStart, onExit }) {
               <span className="chip chip-amarelo">+{config.total * 15} XP esperados</span>
             </div>
           </div>
-          <button className="btn btn-cta btn-lg" onClick={onStart} disabled={config.areas.length === 0}>
-            Começar →
+          <button className="btn btn-cta btn-lg" onClick={onStart} disabled={config.areas.length === 0 || loading}>
+            {loading ? 'Preparando sessão…' : 'Começar →'}
           </button>
         </div>
       </div>
@@ -105,12 +133,15 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
   const { AREAS } = window.AppData;
   const q = session.questoes[session.idx];
   const total = session.questoes.length;
-  const [escolhida, setEscolhida] = useStatePractice(null);
-  const [confirmada, setConfirmada] = useStatePractice(false);
-  const [tempo, setTempo] = useStatePractice(0);
+
+  const [escolhida,   setEscolhida]   = useStatePractice(null);
+  const [confirmada,  setConfirmada]  = useStatePractice(false);
+  const [confirmando, setConfirmando] = useStatePractice(false);
+  const [feedbackAPI, setFeedbackAPI] = useStatePractice(null); // { acertou, correta }
+  const [tempo,       setTempo]       = useStatePractice(0);
 
   useEffectPractice(() => {
-    setEscolhida(null); setConfirmada(false); setTempo(0);
+    setEscolhida(null); setConfirmada(false); setConfirmando(false); setFeedbackAPI(null); setTempo(0);
   }, [session.idx]);
 
   useEffectPractice(() => {
@@ -119,13 +150,25 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
     return () => clearInterval(t);
   }, [confirmada, session.idx]);
 
-  const confirmar = () => {
-    if (!escolhida) return;
-    setConfirmada(true);
-    setSession(s => ({
-      ...s,
-      respostas: [...s.respostas, { qId: q.id, escolhida, correta: q.correta, tempo, area: q.area }],
-    }));
+  const confirmar = async () => {
+    if (!escolhida || confirmando) return;
+    setConfirmando(true);
+    try {
+      const resp = await window.apiFetch('/answers', {
+        method: 'POST',
+        body: JSON.stringify({ session_id: session.id, question_id: q.id, escolhida, tempo_s: tempo }),
+      });
+      setFeedbackAPI(resp);
+      setConfirmada(true);
+      setSession(s => ({
+        ...s,
+        respostas: [...s.respostas, { qId: q.id, escolhida, correta: resp.correta, acertou: resp.acertou, tempo }],
+      }));
+    } catch (err) {
+      alert('Erro ao registrar resposta: ' + (err.error || 'tente novamente'));
+    } finally {
+      setConfirmando(false);
+    }
   };
 
   const avancar = () => {
@@ -133,9 +176,10 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
     else setSession(s => ({ ...s, idx: s.idx + 1 }));
   };
 
-  const area = AREAS[q.area];
+  const area    = AREAS[q.area_direito] || { label: q.area_direito || 'Área', icon: '⚖️', pillClass: 'area-pill-civil' };
   const tempoFmt = `${String(Math.floor(tempo/60)).padStart(2,'0')}:${String(tempo%60).padStart(2,'0')}`;
-  const acertou = confirmada && escolhida === q.correta;
+  const acertou  = feedbackAPI?.acertou;
+  const correta  = feedbackAPI?.correta;
 
   return (
     <div className="practice-run fade-in">
@@ -147,7 +191,7 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
             {session.questoes.map((_, i) => {
               const resp = session.respostas[i];
               const cls = resp
-                ? (resp.escolhida === resp.correta ? 'done' : 'wrong')
+                ? (resp.acertou ? 'done' : 'wrong')
                 : (i === session.idx ? 'current' : '');
               return <div key={i} className={`practice-run-dot ${cls}`} />;
             })}
@@ -163,7 +207,7 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
         <div className="practice-question-card fade-up" key={q.id}>
           <div className="qcard-header">
             <div className="qcard-meta">
-              <span className="qcard-tag">{q.banca} · {q.edicao}</span>
+              <span className="qcard-tag">{q.banca || 'OAB'} · {q.edicao || ''}</span>
               <span className="qcard-num">Q. {session.idx + 1} / {total}</span>
             </div>
             <span className={`area-pill ${area.pillClass}`} style={{padding:'4px 10px'}}>
@@ -172,14 +216,14 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
           </div>
 
           <div className="qcard-body">
-            <div className="qcard-area-mono">{q.artigo}</div>
             <p className="qcard-enunciado">{q.enunciado}</p>
+            {q.comando && <p style={{color:'var(--text-secondary)', marginBottom:16}}>{q.comando}</p>}
 
             <div className="qcard-options">
               {q.opcoes.map(o => {
                 let state = '';
                 if (confirmada) {
-                  if (o.letra === q.correta) state = 'correct';
+                  if (o.letra === correta)   state = 'correct';
                   else if (o.letra === escolhida) state = 'wrong';
                   else state = 'dimmed';
                 } else if (escolhida === o.letra) {
@@ -192,8 +236,8 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
                           disabled={confirmada}>
                     <div className="option-letter">{o.letra}</div>
                     <div className="option-text">{o.texto}</div>
-                    {confirmada && o.letra === q.correta && <span className="option-state">✓ gabarito</span>}
-                    {confirmada && o.letra === escolhida && o.letra !== q.correta && <span className="option-state">sua resposta</span>}
+                    {confirmada && o.letra === correta   && <span className="option-state">✓ gabarito</span>}
+                    {confirmada && o.letra === escolhida && o.letra !== correta && <span className="option-state">sua resposta</span>}
                   </button>
                 );
               })}
@@ -208,15 +252,10 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
                       {acertou ? 'Resposta correta!' : 'Quase lá — não foi dessa vez'}
                     </div>
                     <div className="qcard-feedback-sub">
-                      Gabarito: letra <strong>{q.correta}</strong> · {q.artigo}
+                      Gabarito: letra <strong>{correta}</strong>
                     </div>
                   </div>
                   {acertou && <span className="chip chip-amarelo">+15 XP</span>}
-                </div>
-                <p className="qcard-feedback-body">{q.explicacao}</p>
-                <div className="qcard-feedback-actions">
-                  <button className="btn btn-ghost btn-sm">🔖 Salvar para revisão</button>
-                  <button className="btn btn-quiet btn-sm">Ver legislação</button>
                 </div>
               </div>
             )}
@@ -224,7 +263,7 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
 
           <div className="qcard-footer-bar">
             <div className="qcard-footer-meta">
-              <span className="chip chip-neutral">Dificuldade: {q.dificuldade}</span>
+              {q.dificuldade && <span className="chip chip-neutral">Dificuldade: {q.dificuldade}</span>}
               {confirmada && (
                 <span className={`chip ${acertou ? 'chip-green' : 'chip-bordo'}`}>
                   ⏱ Respondida em {tempo}s
@@ -232,8 +271,8 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
               )}
             </div>
             {!confirmada ? (
-              <button className="btn btn-primary btn-lg" disabled={!escolhida} onClick={confirmar}>
-                Confirmar resposta →
+              <button className="btn btn-primary btn-lg" disabled={!escolhida || confirmando} onClick={confirmar}>
+                {confirmando ? 'Registrando…' : 'Confirmar resposta →'}
               </button>
             ) : (
               <button className="btn btn-primary btn-lg" onClick={avancar}>
@@ -248,13 +287,29 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
 }
 
 /* ---------- Result ---------- */
-function PracticeResult({ session, onRetry, onExit, onNavigate }) {
-  const { AREAS, QUESTIONS } = window.AppData;
-  const total = session.respostas.length;
-  const acertos = session.respostas.filter(r => r.escolhida === r.correta).length;
-  const pct = Math.round(acertos / total * 100);
+function PracticeResult({ session, onRetry, onExit, onNavigate, onUserUpdate }) {
+  const { AREAS } = window.AppData;
+  const [resultado,  setResultado]  = useStatePractice(null);
+  const [concluindo, setConcluindo] = useStatePractice(true);
+
+  useEffectPractice(() => {
+    window.apiFetch(`/sessions/${session.id}/concluir`, { method: 'PATCH' })
+      .then(r => {
+        setResultado(r);
+        // Atualiza XP/streak na sidebar sem forçar logout
+        if (onUserUpdate) {
+          window.apiFetch('/auth/me').then(onUserUpdate).catch(() => {});
+        }
+      })
+      .catch(console.error)
+      .finally(() => setConcluindo(false));
+  }, []);
+
+  const total      = session.respostas.length;
+  const acertos    = resultado?.acertos    ?? session.respostas.filter(r => r.acertou).length;
+  const xp         = resultado?.xp_ganho   ?? (acertos * 15 + (acertos === total ? 30 : 0));
   const tempoTotal = session.respostas.reduce((acc, r) => acc + r.tempo, 0);
-  const xp = acertos * 15 + (acertos === total ? 30 : 0);
+  const pct        = total > 0 ? Math.round(acertos / total * 100) : 0;
 
   const msg =
     pct >= 80 ? 'Excelente sessão! Você está afiado.' :
@@ -292,7 +347,9 @@ function PracticeResult({ session, onRetry, onExit, onNavigate }) {
             </div>
             <div>
               <div className="stat-label" style={{color:'rgba(245,240,235,.5)'}}>XP ganhos</div>
-              <div className="practice-result-big" style={{color:'var(--amarelo)'}}>+{xp}</div>
+              <div className="practice-result-big" style={{color:'var(--amarelo)'}}>
+                {concluindo ? '…' : `+${xp}`}
+              </div>
             </div>
             <div>
               <div className="stat-label" style={{color:'rgba(245,240,235,.5)'}}>Tempo total</div>
@@ -311,18 +368,18 @@ function PracticeResult({ session, onRetry, onExit, onNavigate }) {
 
       <div className="practice-result-list-wrap">
         <h2 className="dash-card-title">Revisão das questões</h2>
-        <p className="dash-card-sub">Toque para abrir o gabarito comentado e revisar com calma.</p>
+        <p className="dash-card-sub">Confira o gabarito de cada questão respondida.</p>
         <div className="practice-result-list">
           {session.respostas.map((r, i) => {
-            const q = QUESTIONS.find(x => x.id === r.qId);
-            const ok = r.escolhida === r.correta;
-            const area = AREAS[q.area];
+            const q    = session.questoes.find(x => x.id === r.qId);
+            const ok   = r.acertou;
+            const area = AREAS[q?.area_direito] || { label: q?.area_direito || 'Área', icon: '⚖️', pillClass: 'area-pill-civil' };
             return (
               <div key={i} className={`practice-result-row ${ok ? 'ok' : 'bad'}`}>
                 <div className="practice-result-row-num">{i + 1}</div>
                 <div className="practice-result-row-icon">{ok ? '✓' : '✕'}</div>
                 <div className="practice-result-row-main">
-                  <div className="practice-result-row-q">{q.enunciado}</div>
+                  <div className="practice-result-row-q">{q?.enunciado}</div>
                   <div className="practice-result-row-meta">
                     <span className={`area-pill ${area.pillClass}`} style={{padding:'2px 8px', fontSize:'10px'}}>{area.icon} {area.label}</span>
                     <span>Sua resposta: <strong>{r.escolhida}</strong></span>
@@ -330,7 +387,6 @@ function PracticeResult({ session, onRetry, onExit, onNavigate }) {
                     <span>⏱ {r.tempo}s</span>
                   </div>
                 </div>
-                <button className="btn btn-quiet btn-sm">Revisar →</button>
               </div>
             );
           })}

@@ -1,5 +1,5 @@
 /* global React */
-const { useState: useStateShell } = React;
+const { useState: useStateShell, useEffect: useEffectShell } = React;
 
 /* =========================================================
    App Shell — sidebar + topbar do app autenticado
@@ -11,8 +11,6 @@ function AppShell({ user, page, onNavigate, onPracticeStart, onLogout, children 
     { id: 'dashboard', label: 'Início',       icon: '◆' },
     { id: 'practice',  label: 'Praticar',     icon: '▶' },
     { id: 'stats',     label: 'Estatísticas', icon: '◇' },
-    { id: 'review',    label: 'Histórico',    icon: '☷' },
-    // "Admin" aparece apenas para usuários com role='admin'
     ...(user?.role === 'admin' ? [{ id: 'admin', label: 'Admin', icon: '⚙' }] : []),
   ];
 
@@ -74,21 +72,50 @@ function AppShell({ user, page, onNavigate, onPracticeStart, onLogout, children 
    Dashboard
    ========================================================= */
 function Dashboard({ user, onPracticeStart, onNavigate }) {
-  const { STATS_OVERVIEW, STATS_AREAS, AREAS, SPARK_7D } = window.AppData;
-  const meta = STATS_OVERVIEW.metaDiaria;
-  const metaPct = Math.round(meta.feito / meta.alvo * 100);
-  const firstName = user.nome.split(' ')[0] || 'Estudante';
+  const { AREAS } = window.AppData;
+  const firstName = (user?.nome || 'Estudante').split(' ')[0];
+
+  const [overview, setOverview] = useStateShell(null);
+  const [areas,    setAreas]    = useStateShell([]);
+  const [spark,    setSpark]    = useStateShell([0,0,0,0,0,0,0]);
+  const [loading,  setLoading]  = useStateShell(true);
+
+  useEffectShell(() => {
+    setLoading(true);
+    Promise.all([
+      window.apiFetch('/stats/overview'),
+      window.apiFetch('/stats/areas'),
+      window.apiFetch('/stats/last-7-days'),
+    ])
+      .then(([ov, ar, sp]) => { setOverview(ov); setAreas(ar); setSpark(sp); })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const meta     = overview?.metaDiaria || { feito: 0, alvo: 1 };
+  const metaPct  = Math.round((meta.feito / Math.max(meta.alvo, 1)) * 100);
+  const topAreas = [...areas].sort((a, b) => b.pct - a.pct).slice(0, 4);
+
+  const diasParaProva = (() => {
+    if (!user?.dataProva) return null;
+    const diff = Math.ceil((new Date(user.dataProva) - Date.now()) / 864e5);
+    return diff > 0 ? diff : null;
+  })();
 
   return (
     <div className="dash fade-up">
       <header className="dash-top">
         <div>
-          <div className="eyebrow">{saudacao()} · sex, 15 mai</div>
+          <div className="eyebrow">{saudacao()} · {new Date().toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'short' })}</div>
           <h1 className="page-h1">Olá, {firstName}.</h1>
-          <p className="page-sub">Faltam <strong>127 dias</strong> para o próximo exame. Hoje sua meta é {meta.alvo} questões.</p>
+          <p className="page-sub">
+            {diasParaProva
+              ? <>Faltam <strong>{diasParaProva} dias</strong> para o próximo exame. </>
+              : ''}
+            Hoje sua meta é {meta.alvo} questões.
+          </p>
         </div>
         <div className="dash-top-actions">
-          <button className="btn btn-secondary">Ver plano semanal</button>
           <button className="btn btn-cta btn-lg" onClick={onPracticeStart}>⚡ Continuar estudo</button>
         </div>
       </header>
@@ -98,34 +125,30 @@ function Dashboard({ user, onPracticeStart, onNavigate }) {
           <div className="dash-continue-stripe" />
           <div className="dash-continue-body">
             <div className="eyebrow" style={{color:'var(--amarelo)'}}>Sua próxima sessão</div>
-            <h2 className="dash-continue-title">Responsabilidade civil — bloco 2</h2>
-            <p className="dash-continue-sub">10 questões · ≈ {user.minutosDia} min · adaptado ao seu desempenho</p>
-
+            <h2 className="dash-continue-title">Sessão de prática</h2>
+            <p className="dash-continue-sub">10 questões · ≈ {user?.minutosDia || 30} min · adaptado ao seu desempenho</p>
             <div className="dash-continue-meta">
               <span className="chip chip-amarelo">+150 XP esperados</span>
-              <span className="chip chip-azul">FGV · OAB recente</span>
               <span className="chip chip-neutral">Dificuldade média</span>
             </div>
-
-            <div className="dash-continue-areas">
-              <span className={`area-pill ${AREAS.civil.pillClass}`}>{AREAS.civil.icon} Direito Civil</span>
-              <span className={`area-pill ${AREAS.const.pillClass}`}>{AREAS.const.icon} Constitucional</span>
-            </div>
-
             <div className="dash-continue-cta">
               <button className="btn btn-primary btn-lg" onClick={onPracticeStart}>Começar agora →</button>
-              <button className="btn btn-ghost">Personalizar sessão</button>
+              <button className="btn btn-ghost" onClick={onPracticeStart}>Personalizar sessão</button>
             </div>
           </div>
         </div>
 
         <div className="streak-card">
           <div className="streak-eyebrow">Sequência atual</div>
-          <div className="streak-number">{user.streak}</div>
+          <div className="streak-number">{user?.streak || 0}</div>
           <div className="streak-label">dias consecutivos de estudo</div>
           <div className="streak-days">
             {['seg','ter','qua','qui','sex','sáb','dom'].map((d, i) => {
-              const cls = i < 4 ? 'done' : i === 4 ? 'today' : 'pending';
+              const today = new Date().getDay();
+              const dayIndex = [1,2,3,4,5,6,0][i];
+              const isPast  = dayIndex < today;
+              const isToday = dayIndex === today;
+              const cls = isPast ? 'done' : isToday ? 'today' : 'pending';
               return (
                 <div key={d} className="streak-day">
                   <div className={`streak-day-circle ${cls}`}>{cls === 'done' ? '✓' : cls === 'today' ? '●' : '–'}</div>
@@ -140,22 +163,24 @@ function Dashboard({ user, onPracticeStart, onNavigate }) {
       <section className="dash-row dash-stats">
         <div className="stat-card accent-bordo">
           <div className="stat-label">Acertos</div>
-          <div className="stat-value" style={{color:'var(--bordo)'}}>{STATS_OVERVIEW.acertosPct}%</div>
-          <div className="stat-sub">Média geral · ↑ 4pp na semana</div>
+          <div className="stat-value" style={{color:'var(--bordo)'}}>{loading ? '—' : `${overview?.acertosPct ?? 0}%`}</div>
+          <div className="stat-sub">Média geral</div>
         </div>
         <div className="stat-card accent-azul">
           <div className="stat-label">Questões</div>
-          <div className="stat-value" style={{color:'var(--azul)'}}>{STATS_OVERVIEW.questoesRespondidas.toLocaleString('pt-BR')}</div>
+          <div className="stat-value" style={{color:'var(--azul)'}}>{loading ? '—' : (overview?.questoesRespondidas ?? 0).toLocaleString('pt-BR')}</div>
           <div className="stat-sub">Respondidas no total</div>
         </div>
         <div className="stat-card accent-amarelo">
           <div className="stat-label">XP Total</div>
-          <div className="stat-value" style={{color:'var(--amarelo-dark)'}}>{STATS_OVERVIEW.xpTotal.toLocaleString('pt-BR')}</div>
-          <div className="stat-sub">+{STATS_OVERVIEW.xpHoje} hoje</div>
+          <div className="stat-value" style={{color:'var(--amarelo-dark)'}}>{loading ? '—' : (overview?.xpTotal ?? 0).toLocaleString('pt-BR')}</div>
+          <div className="stat-sub">+{overview?.xpHoje ?? 0} hoje</div>
         </div>
         <div className="stat-card accent-green">
           <div className="stat-label">Meta diária</div>
-          <div className="stat-value" style={{color:'var(--green-dark)'}}>{meta.feito}<span style={{color:'var(--text-muted)', fontSize:'var(--text-lg)'}}>/{meta.alvo}</span></div>
+          <div className="stat-value" style={{color:'var(--green-dark)'}}>
+            {loading ? '—' : <>{meta.feito}<span style={{color:'var(--text-muted)', fontSize:'var(--text-lg)'}}>/{meta.alvo}</span></>}
+          </div>
           <div className="stat-sub">{metaPct}% concluída hoje</div>
         </div>
       </section>
@@ -170,12 +195,13 @@ function Dashboard({ user, onPracticeStart, onNavigate }) {
             <button className="btn btn-quiet btn-sm" onClick={() => onNavigate('stats')}>Ver tudo →</button>
           </div>
           <div className="dash-areas-list">
-            {STATS_AREAS.slice(0, 4).map(s => {
-              const area = AREAS[s.area];
-              const fillClass =
-                s.pct >= 80 ? 'green-fill' :
-                s.pct >= 65 ? 'amarelo-fill' :
-                s.pct >= 50 ? '' : 'azul-fill';
+            {loading && <div style={{color:'var(--text-muted)', fontSize:'var(--text-sm)'}}>Carregando…</div>}
+            {!loading && topAreas.length === 0 && (
+              <div style={{color:'var(--text-muted)', fontSize:'var(--text-sm)'}}>Nenhuma questão respondida ainda.</div>
+            )}
+            {topAreas.map(s => {
+              const area = AREAS[s.area] || { label: s.area, icon: '⚖️', pillClass: 'area-pill-civil' };
+              const fillClass = s.pct >= 80 ? 'green-fill' : s.pct >= 65 ? 'amarelo-fill' : s.pct >= 50 ? '' : 'azul-fill';
               return (
                 <div key={s.area} className="dash-area-row">
                   <span className={`area-pill ${area.pillClass}`}>{area.icon} {area.label}</span>
@@ -197,11 +223,10 @@ function Dashboard({ user, onPracticeStart, onNavigate }) {
               <h3 className="dash-card-title">Últimos 7 dias</h3>
               <p className="dash-card-sub">% de acertos por dia</p>
             </div>
-            <span className="chip chip-green">↑ tendência boa</span>
           </div>
-          <Sparkline data={SPARK_7D} />
+          <Sparkline data={spark} />
           <div className="dash-spark-labels">
-            {['sáb','dom','seg','ter','qua','qui','sex'].map(d => <span key={d}>{d}</span>)}
+            {['seg','ter','qua','qui','sex','sáb','dom'].map(d => <span key={d}>{d}</span>)}
           </div>
         </div>
       </section>
@@ -218,11 +243,11 @@ function saudacao() {
 
 function Sparkline({ data }) {
   const w = 360, h = 110, pad = 8;
-  const max = Math.max(...data) + 5;
-  const min = Math.min(...data) - 5;
+  const max = Math.max(...data, 1) + 5;
+  const min = Math.max(Math.min(...data) - 5, 0);
   const pts = data.map((v, i) => {
     const x = pad + (i / (data.length - 1)) * (w - pad * 2);
-    const y = h - pad - ((v - min) / (max - min)) * (h - pad * 2);
+    const y = h - pad - ((v - min) / (max - min || 1)) * (h - pad * 2);
     return [x, y];
   });
   const linePath = pts.map((p, i) => (i === 0 ? `M${p[0]},${p[1]}` : `L${p[0]},${p[1]}`)).join(' ');
