@@ -30,6 +30,8 @@ const fakeQuestao = {
 
 const fakeIAResponse = {
   content: [{ text: JSON.stringify([fakeQuestao]) }],
+  stop_reason: 'end_turn',
+  usage: { input_tokens: 100, output_tokens: 200 },
 };
 
 // ── POST /api/admin/import-pdf ────────────────────────────────────────────────
@@ -81,10 +83,40 @@ describe('POST /api/admin/import-pdf', () => {
     expect(res.body.error).toMatch(/não tem texto/i);
   });
 
-  it('200 com 2 PDFs retorna questões com gabarito preenchido', async () => {
+  it('200 retorna jobId imediatamente (processamento assíncrono)', async () => {
+    const res = await request(app)
+      .post('/api/admin/import-pdf')
+      .set('Authorization', `Bearer ${token()}`)
+      .attach('pdfs', Buffer.from('%PDF-1.4'), 'prova.pdf');
+    expect(res.status).toBe(200);
+    expect(res.body.jobId).toBeDefined();
+    expect(res.body.status).toBe('processing');
+  });
+
+  it('job conclui com questões após o setImmediate executar', async () => {
+    const res = await request(app)
+      .post('/api/admin/import-pdf')
+      .set('Authorization', `Bearer ${token()}`)
+      .attach('pdfs', Buffer.from('%PDF-1.4'), 'prova.pdf');
+    const { jobId } = res.body;
+
+    // Aguarda o setImmediate do background processar
+    await new Promise(r => setTimeout(r, 200));
+
+    const statusRes = await request(app)
+      .get(`/api/admin/import-status/${jobId}`)
+      .set('Authorization', `Bearer ${token()}`);
+
+    expect(statusRes.status).toBe(200);
+    expect(statusRes.body.status).toBe('done');
+    expect(statusRes.body.questoes[0].id).toBe('XLI-Q001');
+    expect(statusRes.body.total).toBe(1);
+  });
+
+  it('200 com 2 PDFs — job conclui com gabarito preenchido', async () => {
     const questaoComGabarito = { ...fakeQuestao, gabarito: 'C' };
     Anthropic.mockImplementation(() => ({
-      messages: { create: jest.fn().mockResolvedValue({ content: [{ text: JSON.stringify([questaoComGabarito]) }] }) },
+      messages: { create: jest.fn().mockResolvedValue({ ...fakeIAResponse, content: [{ text: JSON.stringify([questaoComGabarito]) }] }) },
     }));
     pdfParse.mockResolvedValue({ text: 'Questão 1. ' + 'x'.repeat(200) });
 
@@ -94,33 +126,41 @@ describe('POST /api/admin/import-pdf', () => {
       .attach('pdfs', Buffer.from('%PDF-1.4'), 'caderno.pdf')
       .attach('pdfs', Buffer.from('%PDF-1.4'), 'gabarito.pdf');
 
-    expect(res.status).toBe(200);
-    expect(res.body.total).toBe(1);
-    expect(res.body.com_gabarito).toBe(1);
-    expect(res.body.questoes[0].gabarito).toBe('C');
+    await new Promise(r => setTimeout(r, 200));
+
+    const statusRes = await request(app)
+      .get(`/api/admin/import-status/${res.body.jobId}`)
+      .set('Authorization', `Bearer ${token()}`);
+
+    expect(statusRes.body.status).toBe('done');
+    expect(statusRes.body.com_gabarito).toBe(1);
+    expect(statusRes.body.questoes[0].gabarito).toBe('C');
   });
 
-  it('200 retorna questões extraídas pela IA', async () => {
-    const res = await request(app)
-      .post('/api/admin/import-pdf')
-      .set('Authorization', `Bearer ${token()}`)
-      .attach('pdfs', Buffer.from('%PDF-1.4'), 'prova.pdf');
-    expect(res.status).toBe(200);
-    expect(res.body.total).toBe(1);
-    expect(res.body.questoes[0].id).toBe('XLI-Q001');
-    expect(res.body.questoes[0].gabarito).toBe('C');
-  });
-
-  it('502 quando IA não retorna JSON válido', async () => {
+  it('job fica com erro quando IA não retorna nenhuma questão', async () => {
     Anthropic.mockImplementation(() => ({
-      messages: { create: jest.fn().mockResolvedValue({ content: [{ text: 'Desculpe, não consegui processar.' }] }) },
+      messages: { create: jest.fn().mockResolvedValue({ ...fakeIAResponse, content: [{ text: 'Desculpe, não consegui processar.' }] }) },
     }));
     const res = await request(app)
       .post('/api/admin/import-pdf')
       .set('Authorization', `Bearer ${token()}`)
       .attach('pdfs', Buffer.from('%PDF-1.4'), 'prova.pdf');
-    expect(res.status).toBe(502);
-    expect(res.body.error).toMatch(/json válido/i);
+
+    await new Promise(r => setTimeout(r, 200));
+
+    const statusRes = await request(app)
+      .get(`/api/admin/import-status/${res.body.jobId}`)
+      .set('Authorization', `Bearer ${token()}`);
+
+    expect(statusRes.body.status).toBe('error');
+    expect(statusRes.body.erro).toMatch(/nenhuma questão/i);
+  });
+
+  it('GET /import-status retorna 404 para jobId inexistente', async () => {
+    const res = await request(app)
+      .get('/api/admin/import-status/job-inexistente')
+      .set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(404);
   });
 });
 
