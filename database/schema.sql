@@ -41,8 +41,59 @@ CREATE TABLE IF NOT EXISTS questions (
   created_at     TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_questions_area       ON questions(area_direito);
-CREATE INDEX IF NOT EXISTS idx_questions_banca      ON questions(banca);
+CREATE INDEX IF NOT EXISTS idx_questions_area        ON questions(area_direito);
+CREATE INDEX IF NOT EXISTS idx_questions_banca       ON questions(banca);
 CREATE INDEX IF NOT EXISTS idx_questions_dificuldade ON questions(dificuldade);
-CREATE INDEX IF NOT EXISTS idx_questions_edicao     ON questions(edicao);
-CREATE INDEX IF NOT EXISTS idx_questions_ano        ON questions(ano);
+CREATE INDEX IF NOT EXISTS idx_questions_edicao      ON questions(edicao);
+CREATE INDEX IF NOT EXISTS idx_questions_ano         ON questions(ano);
+
+-- ── Sessões de estudo ──────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id             SERIAL PRIMARY KEY,
+  user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  modo           VARCHAR(20) NOT NULL,  -- 'rapida' | 'simulado' | 'personalizado'
+  areas          TEXT[],
+  total_questoes INTEGER NOT NULL,
+  acertos        INTEGER     DEFAULT 0,
+  tempo_total_s  INTEGER     DEFAULT 0,
+  xp_ganho       INTEGER     DEFAULT 0,
+  concluida      BOOLEAN     DEFAULT FALSE,
+  iniciada_em    TIMESTAMPTZ DEFAULT NOW(),
+  concluida_em   TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, iniciada_em DESC);
+
+-- ── Respostas individuais ──────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS answers (
+  id            SERIAL PRIMARY KEY,
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  session_id    INTEGER REFERENCES sessions(id) ON DELETE CASCADE,
+  question_id   INTEGER NOT NULL REFERENCES questions(id),
+  escolhida     VARCHAR(1)  NOT NULL,
+  correta       VARCHAR(1)  NOT NULL,
+  acertou       BOOLEAN     NOT NULL,
+  tempo_s       INTEGER     NOT NULL,
+  respondida_em TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_answers_user    ON answers(user_id, respondida_em DESC);
+CREATE INDEX IF NOT EXISTS idx_answers_session ON answers(session_id);
+
+-- ── Questões salvas para revisão ───────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS reviews (
+  id          SERIAL PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  question_id INTEGER NOT NULL REFERENCES questions(id),
+  criado_em   TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, question_id)
+);
+
+-- ── Colunas adicionais em users ────────────────────────────────────────────────
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ultima_atividade  DATE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS area_segunda_fase VARCHAR(50);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS data_prova        DATE;
