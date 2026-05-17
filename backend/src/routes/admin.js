@@ -108,42 +108,88 @@ router.post('/import-pdf', requireAdmin, (req, res, next) => {
   const jobId = crypto.randomUUID();
   jobs.set(jobId, { status: 'processing', questoes: null, erro: null, criadoEm: Date.now() });
 
-  const conteudo = textos.length === 1
-    ? `Texto do PDF:\n\n${textos[0].texto}`
-    : textos.map((t, i) => `--- PDF ${i + 1}: ${t.nome} ---\n\n${t.texto}`).join('\n\n');
+  // Separa texto do caderno e do gabarito
+  const textoCaderno  = textos[0].texto;
+  const textoGabarito = textos[1]?.texto || null;
 
-  console.log(`[import-pdf] Job ${jobId} iniciado. ${conteudo.length} chars → DeepSeek`);
+  // Divide o caderno em lotes de ~40.000 chars (~10k tokens de entrada)
+  // para garantir que a resposta caiba dentro dos 16k tokens de saída
+  const CHUNK_SIZE = 40000;
+  const chunks = [];
+  for (let i = 0; i < textoCaderno.length; i += CHUNK_SIZE) {
+    chunks.push(textoCaderno.slice(i, i + CHUNK_SIZE));
+  }
+  console.log(`[import-pdf] Job ${jobId} — ${chunks.length} lote(s) de até ${CHUNK_SIZE} chars. Gabarito: ${textoGabarito ? 'sim' : 'não'}`);
   res.json({ jobId, status: 'processing' });
 
-  // Processa em background (sem bloquear a resposta HTTP)
+  // Tenta recuperar JSON mesmo quando a resposta foi truncada por max_tokens
+  function extrairQuestoes(raw) {
+    // Tenta match completo primeiro
+    const completo = raw.match(/\[[\s\S]*\]/);
+    if (completo) {
+      try { return JSON.parse(completo[0]); } catch { /* cai para recuperação */ }
+    }
+    // Resposta truncada: acha o último objeto completo e fecha o array
+    const abreArray = raw.indexOf('[');
+    if (abreArray === -1) return null;
+    const trecho = raw.slice(abreArray);
+    const ultimoFecha = trecho.lastIndexOf('},');
+    if (ultimoFecha === -1) return null;
+    try {
+      return JSON.parse(trecho.slice(0, ultimoFecha + 1) + ']');
+    } catch {
+      return null;
+    }
+  }
+
+  // Processa em background
   setImmediate(async () => {
     try {
       const client = makeClient();
-      const response = await client.messages.create({
-        model: DEEPSEEK_MODEL,
-        max_tokens: 16000,
-        messages: [{ role: 'user', content: `${PROMPT_SISTEMA}\n\n${conteudo}` }],
-      });
+      const todasQuestoes = [];
 
-      console.log(`[import-pdf] Job ${jobId} — DeepSeek respondeu. stop_reason: ${response.stop_reason}, tokens: ${JSON.stringify(response.usage)}`);
-      const raw = response.content[0]?.text || '';
-      const jsonMatch = raw.match(/\[[\s\S]*\]/);
+      for (let i = 0; i < chunks.length; i++) {
+        const sufixo = textoGabarito
+          ? `\n\n--- GABARITO OFICIAL ---\n\n${textoGabarito}`
+          : '';
+        const conteudo = chunks.length === 1
+          ? `Texto do PDF:\n\n${chunks[i]}${sufixo}`
+          : `Texto do PDF (parte ${i + 1} de ${chunks.length}):\n\n${chunks[i]}${sufixo}`;
 
-      if (!jsonMatch) {
-        console.error(`[import-pdf] Job ${jobId} — sem JSON válido na resposta:`, raw.slice(0, 300));
-        jobs.set(jobId, { status: 'error', erro: 'A IA não retornou JSON válido. Tente novamente.' });
-        return;
+        console.log(`[import-pdf] Job ${jobId} — lote ${i + 1}/${chunks.length} (${conteudo.length} chars)`);
+
+        const response = await client.messages.create({
+          model: DEEPSEEK_MODEL,
+          max_tokens: 16000,
+          messages: [{ role: 'user', content: `${PROMPT_SISTEMA}\n\n${conteudo}` }],
+        });
+
+        console.log(`[import-pdf] Job ${jobId} lote ${i + 1} — stop_reason: ${response.stop_reason}, tokens: ${JSON.stringify(response.usage)}`);
+
+        const raw = response.content[0]?.text || '';
+        const questoes = extrairQuestoes(raw);
+
+        if (!questoes || questoes.length === 0) {
+          console.warn(`[import-pdf] Job ${jobId} lote ${i + 1} — sem questões extraídas`);
+          continue;
+        }
+
+        console.log(`[import-pdf] Job ${jobId} lote ${i + 1} — ${questoes.length} questões extraídas`);
+        todasQuestoes.push(...questoes);
+
+        if (response.stop_reason === 'max_tokens') {
+          console.warn(`[import-pdf] Job ${jobId} lote ${i + 1} — resposta truncada, ${questoes.length} questões recuperadas parcialmente`);
+        }
       }
 
-      const questoes = JSON.parse(jsonMatch[0]);
-      if (!Array.isArray(questoes) || questoes.length === 0) {
+      if (todasQuestoes.length === 0) {
         jobs.set(jobId, { status: 'error', erro: 'Nenhuma questão encontrada nos PDFs enviados.' });
         return;
       }
 
-      const comGabarito = questoes.filter(q => q.gabarito).length;
-      console.log(`[import-pdf] Job ${jobId} — concluído: ${questoes.length} questões, ${comGabarito} com gabarito`);
-      jobs.set(jobId, { status: 'done', questoes, comGabarito, total: questoes.length });
+      const comGabarito = todasQuestoes.filter(q => q.gabarito).length;
+      console.log(`[import-pdf] Job ${jobId} — concluído: ${todasQuestoes.length} questões, ${comGabarito} com gabarito`);
+      jobs.set(jobId, { status: 'done', questoes: todasQuestoes, comGabarito, total: todasQuestoes.length });
     } catch (err) {
       console.error(`[import-pdf] Job ${jobId} — erro na IA:`, err.message);
       jobs.set(jobId, { status: 'error', erro: `Erro ao processar com IA: ${err.message}` });
