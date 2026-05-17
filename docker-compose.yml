@@ -27,6 +27,7 @@ services:
       PORT: 3001
       NODE_ENV: production
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET env var is required}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY env var is required}
     # sem port binding — API acessível apenas via nginx dentro da rede Docker
     depends_on:
       db:

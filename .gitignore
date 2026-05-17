@@ -1,1 +1,23 @@
+# Variáveis de ambiente
 .env
+.env.local
+.env.*.local
+
+# Dependências
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# Docker volumes locais
+postgres_data/
