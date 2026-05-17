@@ -36,6 +36,18 @@
 - Nunca faça push se algum teste estiver falhando.
 - O push vai sempre para `origin main`.
 
+## Issues e rastreamento
+
+- **Após qualquer push ou pull, verificar as issues abertas no GitHub:**
+  ```bash
+  gh issue list --repo ForjaDosDias/EstudeOAB --state open --label "priority: P0" && \
+  gh issue list --repo ForjaDosDias/EstudeOAB --state open --label "priority: P1"
+  ```
+- Ao começar a trabalhar em uma issue, referenciá-la no commit: `feat: descrição (#N)`.
+- Ao concluir uma issue, fechá-la com: `gh issue close N --repo ForjaDosDias/EstudeOAB`.
+- Respeitar a ordem de prioridade: P0 antes de P1, P1 antes de P2.
+- Issues P0 têm dependências — ver o campo "Depende de" antes de começar.
+
 ## Estrutura dos testes
 
 ```
