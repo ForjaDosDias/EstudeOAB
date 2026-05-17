@@ -204,7 +204,7 @@ function RegisterFlow({ onCancel, onComplete }) {
   const [form, setForm] = useState({
     nome: '', email: '', senha: '',
     edicao: 'XLI', faseAlvo: '1', dataProva: '',
-    minutosDia: 30, areas: ['civil', 'const', 'etica'],
+    minutosDia: 30, area_segunda_fase: 'civil',
   });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -215,7 +215,7 @@ function RegisterFlow({ onCancel, onComplete }) {
     if (submitting) return false;
     if (step === 0) return form.nome.trim().length > 1 && /.+@.+\..+/.test(form.email) && form.senha.length >= 8;
     if (step === 1) return !!form.edicao;
-    if (step === 2) return form.areas.length > 0;
+    if (step === 2) return !!form.area_segunda_fase;
     return true;
   };
 
@@ -229,12 +229,13 @@ function RegisterFlow({ onCancel, onComplete }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            nome:       form.nome,
-            email:      form.email,
-            password:   form.senha,
-            edicao:     form.edicao,
-            minutosDia: form.minutosDia,
-            areas:      form.areas,
+            nome:             form.nome,
+            email:            form.email,
+            password:         form.senha,
+            edicao:           form.edicao,
+            minutosDia:       form.minutosDia,
+            area_segunda_fase: form.area_segunda_fase,
+            dataProva:        form.dataProva || null,
           }),
         });
         const data = await res.json();
@@ -315,7 +316,7 @@ function StepIdentidade({ form, update }) {
     <>
       <div className="eyebrow">Passo 01</div>
       <h2 className="reg-title">Vamos começar pelo essencial</h2>
-      <p className="reg-sub">Em menos de um minuto sua conta está pronta. Você poderá completar o perfil depois.</p>
+      <p className="reg-sub">Em menos de um minuto sua conta está pronta. Você poderá ajustar seu plano de estudos depois nas configurações.</p>
 
       <div className="reg-form">
         <div className="input-group">
@@ -338,7 +339,7 @@ function StepIdentidade({ form, update }) {
 
         <label className="reg-check">
           <input type="checkbox" defaultChecked />
-          <span>Concordo com os <a>termos de uso</a> e <a>política de privacidade</a>.</span>
+          <span>Concordo com os <span title="Em breve" style={{textDecoration:'underline', cursor:'help', color:'var(--text-muted)'}}>termos de uso</span> e <span title="Em breve" style={{textDecoration:'underline', cursor:'help', color:'var(--text-muted)'}}>política de privacidade</span>.</span>
         </label>
       </div>
     </>
@@ -381,8 +382,8 @@ function StepObjetivo({ form, update }) {
   return (
     <>
       <div className="eyebrow">Passo 02</div>
-      <h2 className="reg-title">Qual é o seu objetivo?</h2>
-      <p className="reg-sub">Adaptamos o plano de estudo, a dificuldade e os simulados ao seu exame alvo.</p>
+      <h2 className="reg-title">Para qual exame você está estudando?</h2>
+      <p className="reg-sub">Com a data da prova, ajustamos o tempo de estudo recomendado e a dificuldade das questões.</p>
 
       <div className="reg-options">
         {edicoes.map(e => (
@@ -420,15 +421,34 @@ function StepObjetivo({ form, update }) {
   );
 }
 
+const AREAS_SEGUNDA_FASE = [
+  { id: 'civil',       label: 'Direito Civil' },
+  { id: 'penal',       label: 'Direito Penal' },
+  { id: 'trabalho',    label: 'Direito do Trabalho' },
+  { id: 'trib',        label: 'Direito Tributário' },
+  { id: 'adm',         label: 'Direito Administrativo' },
+  { id: 'const',       label: 'Direito Constitucional' },
+  { id: 'empresarial', label: 'Direito Empresarial' },
+];
+
+function recomendarMinutos(dataProva) {
+  if (!dataProva) return 30;
+  const dias = Math.ceil((new Date(dataProva) - Date.now()) / 864e5);
+  if (dias > 180) return 30;
+  if (dias > 90)  return 45;
+  if (dias > 30)  return 60;
+  return 90;
+}
+
 function StepRotina({ form, update }) {
-  const { AREAS } = window.AppData;
   const minutos = [15, 30, 45, 60, 90];
-  const toggleArea = (id) => {
-    const next = form.areas.includes(id)
-      ? form.areas.filter(a => a !== id)
-      : [...form.areas, id];
-    update({ areas: next });
-  };
+  const recomendado = recomendarMinutos(form.dataProva);
+
+  // Pré-seleciona o tempo recomendado quando o passo abre
+  useEffect(() => {
+    update({ minutosDia: recomendado });
+  }, []);
+
   return (
     <>
       <div className="eyebrow">Passo 03</div>
@@ -442,33 +462,38 @@ function StepRotina({ form, update }) {
                   className={`reg-chip-btn ${form.minutosDia === m ? 'is-active' : ''}`}
                   onClick={() => update({ minutosDia: m })}>
             {m} min
+            {m === recomendado && form.dataProva && (
+              <span className="chip chip-amarelo" style={{marginLeft:6, fontSize:10, padding:'1px 6px'}}>recomendado</span>
+            )}
           </button>
         ))}
       </div>
+      {form.dataProva && (
+        <div style={{fontSize:'var(--text-sm)', color:'var(--text-muted)', marginTop:8}}>
+          Com a sua prova em {new Date(form.dataProva).toLocaleDateString('pt-BR', {day:'2-digit', month:'short', year:'numeric'})}, recomendamos {recomendado} min/dia.
+        </div>
+      )}
 
       <div className="reg-section-title" style={{ marginTop: 24 }}>
-        Áreas de maior interesse <span className="reg-section-sub">· selecione 1 ou mais</span>
+        Área da 2ª fase escolhida
       </div>
       <div className="reg-areas">
-        {Object.values(AREAS).map(a => {
-          const active = form.areas.includes(a.id);
-          return (
-            <button key={a.id} type="button"
-                    className={`reg-area ${active ? 'is-active' : ''}`}
-                    onClick={() => toggleArea(a.id)}>
-              <span className="reg-area-ic">{a.icon}</span>
-              <span className="reg-area-label">{a.label}</span>
-              <span className="reg-area-check">{active ? '✓' : ''}</span>
-            </button>
-          );
-        })}
+        {AREAS_SEGUNDA_FASE.map(a => (
+          <button key={a.id} type="button"
+                  className={`reg-area ${form.area_segunda_fase === a.id ? 'is-active' : ''}`}
+                  onClick={() => update({ area_segunda_fase: a.id })}>
+            <span className="reg-area-ic">{form.area_segunda_fase === a.id ? '●' : '○'}</span>
+            <span className="reg-area-label">{a.label}</span>
+            {form.area_segunda_fase === a.id && <span className="reg-area-check">✓</span>}
+          </button>
+        ))}
       </div>
     </>
   );
 }
 
 function StepPronto({ form }) {
-  const { AREAS } = window.AppData;
+  const areaLabel = AREAS_SEGUNDA_FASE.find(a => a.id === form.area_segunda_fase)?.label || form.area_segunda_fase;
   return (
     <div className="reg-pronto">
       <div className="reg-pronto-mark"><span>✓</span></div>
@@ -488,17 +513,9 @@ function StepPronto({ form }) {
           <div className="reg-pronto-val">{form.minutosDia} min/dia</div>
         </div>
         <div>
-          <div className="stat-label">Áreas</div>
-          <div className="reg-pronto-val">{form.areas.length} selecionadas</div>
+          <div className="stat-label">2ª Fase</div>
+          <div className="reg-pronto-val">{areaLabel}</div>
         </div>
-      </div>
-
-      <div className="reg-pronto-areas">
-        {form.areas.map(id => AREAS[id] && (
-          <span key={id} className={`area-pill ${AREAS[id].pillClass}`}>
-            {AREAS[id].icon} {AREAS[id].label}
-          </span>
-        ))}
       </div>
     </div>
   );

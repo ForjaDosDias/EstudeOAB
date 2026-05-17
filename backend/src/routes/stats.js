@@ -136,4 +136,49 @@ router.get('/last-7-days', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/stats/study-plan/next  (#16)
+router.get('/study-plan/next', requireAuth, async (req, res) => {
+  const userId = req.user.userId;
+  try {
+    const userRes = await pool.query(
+      'SELECT minutos_dia, area_segunda_fase FROM users WHERE id = $1',
+      [userId]
+    );
+    const { minutos_dia, area_segunda_fase } = userRes.rows[0];
+
+    // Busca área com menor % de acerto entre as áreas com respostas
+    const areaRes = await pool.query(
+      `SELECT q.area_direito,
+              COUNT(*) AS respondidas,
+              COUNT(*) FILTER (WHERE a.acertou) AS acertos
+       FROM answers a
+       JOIN questions q ON q.id = a.question_id
+       WHERE a.user_id = $1 AND q.area_direito IS NOT NULL
+       GROUP BY q.area_direito
+       ORDER BY (COUNT(*) FILTER (WHERE a.acertou)::float / COUNT(*)) ASC
+       LIMIT 1`,
+      [userId]
+    );
+
+    // Se não tem histórico, usa a área da 2ª fase do usuário
+    const area = areaRes.rows[0]?.area_direito || area_segunda_fase || 'civil';
+    const LABELS = {
+      civil: 'Direito Civil', const: 'Constitucional', penal: 'Direito Penal',
+      trabalho: 'Direito do Trabalho', adm: 'Direito Administrativo',
+      etica: 'Ética Profissional', trib: 'Direito Tributário', empresarial: 'Direito Empresarial',
+    };
+
+    res.json({
+      titulo: `Reforço em ${LABELS[area] || area}`,
+      area,
+      total: 10,
+      minutos: minutos_dia || 30,
+      xp_esperado: 150,
+    });
+  } catch (err) {
+    console.error('GET /stats/study-plan/next error:', err.message);
+    res.status(500).json({ error: 'Erro ao buscar próxima sessão' });
+  }
+});
+
 module.exports = router;

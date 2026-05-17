@@ -75,10 +75,11 @@ function Dashboard({ user, onPracticeStart, onNavigate }) {
   const { AREAS } = window.AppData;
   const firstName = (user?.nome || 'Estudante').split(' ')[0];
 
-  const [overview, setOverview] = useStateShell(null);
-  const [areas,    setAreas]    = useStateShell([]);
-  const [spark,    setSpark]    = useStateShell([0,0,0,0,0,0,0]);
-  const [loading,  setLoading]  = useStateShell(true);
+  const [overview,   setOverview]   = useStateShell(null);
+  const [areas,      setAreas]      = useStateShell([]);
+  const [spark,      setSpark]      = useStateShell([0,0,0,0,0,0,0]);
+  const [proximaSessao, setProximaSessao] = useStateShell(null);
+  const [loading,    setLoading]    = useStateShell(true);
 
   useEffectShell(() => {
     setLoading(true);
@@ -86,8 +87,9 @@ function Dashboard({ user, onPracticeStart, onNavigate }) {
       window.apiFetch('/stats/overview'),
       window.apiFetch('/stats/areas'),
       window.apiFetch('/stats/last-7-days'),
+      window.apiFetch('/stats/study-plan/next'),
     ])
-      .then(([ov, ar, sp]) => { setOverview(ov); setAreas(ar); setSpark(sp); })
+      .then(([ov, ar, sp, prox]) => { setOverview(ov); setAreas(ar); setSpark(sp); setProximaSessao(prox); })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
@@ -125,10 +127,10 @@ function Dashboard({ user, onPracticeStart, onNavigate }) {
           <div className="dash-continue-stripe" />
           <div className="dash-continue-body">
             <div className="eyebrow" style={{color:'var(--amarelo)'}}>Sua próxima sessão</div>
-            <h2 className="dash-continue-title">Sessão de prática</h2>
-            <p className="dash-continue-sub">10 questões · ≈ {user?.minutosDia || 30} min · adaptado ao seu desempenho</p>
+            <h2 className="dash-continue-title">{proximaSessao?.titulo || 'Sessão de prática'}</h2>
+            <p className="dash-continue-sub">{proximaSessao?.total || 10} questões · ≈ {proximaSessao?.minutos || user?.minutosDia || 30} min · adaptado ao seu desempenho</p>
             <div className="dash-continue-meta">
-              <span className="chip chip-amarelo">+150 XP esperados</span>
+              <span className="chip chip-amarelo">+{proximaSessao?.xp_esperado || 150} XP esperados</span>
               <span className="chip chip-neutral">Dificuldade média</span>
             </div>
             <div className="dash-continue-cta">

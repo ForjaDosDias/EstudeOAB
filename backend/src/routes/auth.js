@@ -18,21 +18,22 @@ function makeToken(user) {
 
 function publicUser(row) {
   return {
-    id:          row.id,
-    email:       row.email,
-    nome:        row.nome,
-    role:        row.role,
-    edicao:      row.edicao,
-    minutosDia:  row.minutos_dia,
-    areas:       row.areas,
-    xp:          row.xp,
-    streak:      row.streak,
+    id:               row.id,
+    email:            row.email,
+    nome:             row.nome,
+    role:             row.role,
+    edicao:           row.edicao,
+    minutosDia:       row.minutos_dia,
+    area_segunda_fase: row.area_segunda_fase,
+    dataProva:        row.data_prova,
+    xp:               row.xp,
+    streak:           row.streak,
   };
 }
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
-  const { email, password, nome, edicao, minutosDia, areas } = req.body;
+  const { email, password, nome, edicao, minutosDia, area_segunda_fase, dataProva } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email e senha são obrigatórios' });
@@ -47,8 +48,8 @@ router.post('/register', async (req, res) => {
   try {
     const hash = await bcrypt.hash(password, SALT_ROUNDS);
     const result = await pool.query(
-      `INSERT INTO users (email, password_hash, nome, edicao, minutos_dia, areas)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO users (email, password_hash, nome, edicao, minutos_dia, area_segunda_fase, data_prova)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
       [
         email.toLowerCase().trim(),
@@ -56,7 +57,8 @@ router.post('/register', async (req, res) => {
         nome?.trim() || null,
         edicao || 'XLI',
         minutosDia || 30,
-        areas || ['civil', 'const', 'etica'],
+        area_segunda_fase || 'civil',
+        dataProva || null,
       ]
     );
     const user = result.rows[0];

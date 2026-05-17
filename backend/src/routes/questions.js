@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const { parse } = require('csv-parse/sync');
 const pool = require('../db');
-const { requireAdmin } = require('../middleware/auth');
+const { requireAdmin, requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 const upload = multer({
@@ -49,6 +49,31 @@ router.get('/', async (req, res) => {
   } catch (err) {
     console.error('GET /questions error:', err.message);
     res.status(500).json({ error: 'Erro ao buscar questões' });
+  }
+});
+
+// GET /api/questions/sortear?areas=civil,const&total=10  (#11)
+router.get('/sortear', requireAuth, async (req, res) => {
+  const total = Math.min(parseInt(req.query.total) || 10, 80);
+  const areas = req.query.areas ? req.query.areas.split(',').map(a => a.trim()) : [];
+
+  try {
+    const areaFilter = areas.length > 0 ? 'AND area_direito = ANY($2)' : '';
+    const params = areas.length > 0 ? [total, areas] : [total];
+
+    const result = await pool.query(
+      `SELECT id, enunciado, comando, alternativa_a, alternativa_b,
+              alternativa_c, alternativa_d, area_direito, banca, edicao, dificuldade
+       FROM questions
+       WHERE enunciado IS NOT NULL ${areaFilter}
+       ORDER BY RANDOM()
+       LIMIT $1`,
+      params
+    );
+    res.json({ questoes: result.rows, total: result.rows.length });
+  } catch (err) {
+    console.error('GET /questions/sortear error:', err.message);
+    res.status(500).json({ error: 'Erro ao sortear questões' });
   }
 });
 
