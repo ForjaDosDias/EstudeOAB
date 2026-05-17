@@ -4,6 +4,7 @@ const pool = require('./db');
 const questionsRouter = require('./routes/questions');
 const authRouter = require('./routes/auth');
 const sessionsRouter = require('./routes/sessions');
+const answersRouter = require('./routes/answers');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -14,6 +15,7 @@ app.use(express.json());
 app.use('/api/auth', authRouter);
 app.use('/api/questions', questionsRouter);
 app.use('/api/sessions', sessionsRouter);
+app.use('/api/answers', answersRouter);
 
 app.get('/api/health', async (req, res) => {
   try {
