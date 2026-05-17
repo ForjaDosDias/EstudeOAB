@@ -64,12 +64,27 @@ function AdminImportPDF() {
     const form = new FormData();
     arquivos.forEach(f => form.append('pdfs', f));
     try {
-      const data = await adminFetch('/admin/import-pdf', { method: 'POST', headers: {}, body: form });
-      setQuestoes(data.questoes);
-      setComGabarito(data.com_gabarito || 0);
+      // 1. Envia os PDFs e recebe jobId imediatamente
+      const { jobId } = await adminFetch('/admin/import-pdf', { method: 'POST', headers: {}, body: form });
+
+      // 2. Polling até o job terminar
+      await new Promise((resolve, reject) => {
+        const poll = setInterval(async () => {
+          try {
+            const status = await adminFetch(`/admin/import-status/${jobId}`);
+            if (status.status === 'processing') return; // ainda processando
+            clearInterval(poll);
+            if (status.status === 'error') { reject(new Error(status.erro)); return; }
+            setQuestoes(status.questoes);
+            setComGabarito(status.com_gabarito || 0);
+            resolve();
+          } catch (e) { clearInterval(poll); reject(e); }
+        }, 4000); // verifica a cada 4 segundos
+      });
+
       setFase('preview');
     } catch (err) {
-      setErro(err.error || 'Erro ao processar. Tente novamente.');
+      setErro(err.message || err.error || 'Erro ao processar. Tente novamente.');
       setFase('upload');
     }
   };

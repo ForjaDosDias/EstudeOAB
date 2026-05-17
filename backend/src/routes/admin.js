@@ -1,8 +1,12 @@
 const express = require('express');
 const multer  = require('multer');
+const crypto  = require('crypto');
 const Anthropic = require('@anthropic-ai/sdk');
 const pool    = require('../db');
 const { requireAdmin } = require('../middleware/auth');
+
+// Armazena jobs em memória — simples e suficiente para uso admin
+const jobs = new Map();
 
 const router = express.Router();
 
@@ -66,7 +70,8 @@ Regras:
 - gabarito: A, B, C ou D — preencha a partir do gabarito oficial se disponível, senão null
 - Não invente alternativas. Preserve o texto exatamente como está no PDF`;
 
-// POST /api/admin/import-pdf  (aceita 1 ou 2 PDFs: caderno + gabarito)
+// POST /api/admin/import-pdf — recebe PDFs, inicia job em background, retorna job_id imediatamente
+// O Cloudflare free tem timeout de 99s; processamento assíncrono evita o corte.
 router.post('/import-pdf', requireAdmin, (req, res, next) => {
   upload.array('pdfs', 2)(req, res, (err) => {
     if (err) return res.status(400).json({ error: err.message });
@@ -82,51 +87,81 @@ router.post('/import-pdf', requireAdmin, (req, res, next) => {
   const textos = [];
 
   for (const file of files) {
+    console.log(`[import-pdf] Lendo PDF: ${file.originalname} (${(file.size/1024).toFixed(0)} KB)`);
     try {
       const data = await pdfParse(file.buffer);
-      if (!data.text || data.text.trim().length < 50) {
+      const chars = data.text?.trim().length || 0;
+      console.log(`[import-pdf] "${file.originalname}": ${chars} caracteres extraídos`);
+      if (chars < 50) {
         return res.status(422).json({
           error: `"${file.originalname}" não tem texto extraível (pode ser imagem escaneada)`,
         });
       }
       textos.push({ nome: file.originalname, texto: data.text });
     } catch (err) {
+      console.error(`[import-pdf] Erro ao parsear "${file.originalname}":`, err.message);
       return res.status(422).json({ error: `Erro ao ler "${file.originalname}": ${err.message}` });
     }
   }
+
+  // Cria job e retorna imediatamente — processamento acontece em background
+  const jobId = crypto.randomUUID();
+  jobs.set(jobId, { status: 'processing', questoes: null, erro: null, criadoEm: Date.now() });
 
   const conteudo = textos.length === 1
     ? `Texto do PDF:\n\n${textos[0].texto}`
     : textos.map((t, i) => `--- PDF ${i + 1}: ${t.nome} ---\n\n${t.texto}`).join('\n\n');
 
-  try {
-    const client = makeClient();
-    const response = await client.messages.create({
-      model: DEEPSEEK_MODEL,
-      max_tokens: 16000,
-      messages: [{ role: 'user', content: `${PROMPT_SISTEMA}\n\n${conteudo}` }],
-    });
+  console.log(`[import-pdf] Job ${jobId} iniciado. ${conteudo.length} chars → DeepSeek`);
+  res.json({ jobId, status: 'processing' });
 
-    const raw = response.content[0]?.text || '';
-    const jsonMatch = raw.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      return res.status(502).json({ error: 'A IA não retornou JSON válido. Tente novamente.' });
-    }
+  // Processa em background (sem bloquear a resposta HTTP)
+  setImmediate(async () => {
+    try {
+      const client = makeClient();
+      const response = await client.messages.create({
+        model: DEEPSEEK_MODEL,
+        max_tokens: 16000,
+        messages: [{ role: 'user', content: `${PROMPT_SISTEMA}\n\n${conteudo}` }],
+      });
 
-    const questoes = JSON.parse(jsonMatch[0]);
-    if (!Array.isArray(questoes) || questoes.length === 0) {
-      return res.status(422).json({ error: 'Nenhuma questão encontrada nos PDFs enviados' });
-    }
+      console.log(`[import-pdf] Job ${jobId} — DeepSeek respondeu. stop_reason: ${response.stop_reason}, tokens: ${JSON.stringify(response.usage)}`);
+      const raw = response.content[0]?.text || '';
+      const jsonMatch = raw.match(/\[[\s\S]*\]/);
 
-    const comGabarito = questoes.filter(q => q.gabarito).length;
-    res.json({ questoes, total: questoes.length, com_gabarito: comGabarito });
-  } catch (err) {
-    if (err.message.includes('DEEPSEEK_API_KEY')) {
-      return res.status(500).json({ error: 'DEEPSEEK_API_KEY não configurada no servidor' });
+      if (!jsonMatch) {
+        console.error(`[import-pdf] Job ${jobId} — sem JSON válido na resposta:`, raw.slice(0, 300));
+        jobs.set(jobId, { status: 'error', erro: 'A IA não retornou JSON válido. Tente novamente.' });
+        return;
+      }
+
+      const questoes = JSON.parse(jsonMatch[0]);
+      if (!Array.isArray(questoes) || questoes.length === 0) {
+        jobs.set(jobId, { status: 'error', erro: 'Nenhuma questão encontrada nos PDFs enviados.' });
+        return;
+      }
+
+      const comGabarito = questoes.filter(q => q.gabarito).length;
+      console.log(`[import-pdf] Job ${jobId} — concluído: ${questoes.length} questões, ${comGabarito} com gabarito`);
+      jobs.set(jobId, { status: 'done', questoes, comGabarito, total: questoes.length });
+    } catch (err) {
+      console.error(`[import-pdf] Job ${jobId} — erro na IA:`, err.message);
+      jobs.set(jobId, { status: 'error', erro: `Erro ao processar com IA: ${err.message}` });
     }
-    console.error('import-pdf IA error:', err.message);
-    res.status(502).json({ error: `Erro ao processar com IA: ${err.message}` });
-  }
+  });
+});
+
+// GET /api/admin/import-status/:jobId — frontend faz polling aqui
+router.get('/import-status/:jobId', requireAdmin, (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job não encontrado' });
+
+  if (job.status === 'processing') return res.json({ status: 'processing' });
+  if (job.status === 'error')      return res.json({ status: 'error', erro: job.erro });
+
+  // Sucesso — remove da memória após entregar
+  jobs.delete(req.params.jobId);
+  res.json({ status: 'done', questoes: job.questoes, total: job.total, com_gabarito: job.comGabarito });
 });
 
 // POST /api/admin/bulk-save  — salva questões após revisão do admin
