@@ -38,6 +38,134 @@ function AdminPage({ token, onNavigate }) {
 }
 
 /* =========================================================
+   Tela de processamento animada
+   ========================================================= */
+function ProcessingScreen({ arquivos }) {
+  const PASSOS = [
+    { msg: 'Lendo arquivos PDF',              subMsg: null },
+    { msg: 'Extraindo texto dos documentos',  subMsg: null },
+    { msg: 'Enviando para o DeepSeek',        subMsg: null },
+    { msg: 'Analisando as questões da prova…', subMsg: null },
+  ];
+  const THRESHOLDS = [0, 3, 8, 18]; // segundos para avançar cada passo
+
+  const [elapsed,  setElapsed]  = useStateAdmin(0);
+  const [stepIdx,  setStepIdx]  = useStateAdmin(0);
+
+  useEffectAdmin(() => {
+    const t = setInterval(() => {
+      setElapsed(e => {
+        const next = e + 1;
+        // avança passo se passou do threshold
+        setStepIdx(s => {
+          const nextStep = THRESHOLDS.findLastIndex(th => next >= th);
+          return Math.max(s, nextStep);
+        });
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const progressPct = Math.min(Math.round((elapsed / 150) * 90), 90);
+
+  const tempoLabel = elapsed < 60
+    ? `há ${elapsed}s`
+    : `há ${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
+
+  const subMensagem = elapsed >= 120
+    ? 'Quase lá — finalizando estrutura JSON…'
+    : elapsed >= 70
+      ? 'Extraindo e organizando o gabarito…'
+      : 'Isso pode levar alguns minutos para provas completas.';
+
+  return (
+    <div className="admin-card" style={{padding:40}}>
+      {/* Cabeçalho */}
+      <div style={{marginBottom:32}}>
+        <div className="eyebrow" style={{marginBottom:4}}>✦ Processando com IA</div>
+        <div style={{fontSize:'var(--text-lg)', fontWeight:700}}>DeepSeek está lendo a prova</div>
+      </div>
+
+      {/* Barra de progresso */}
+      <div style={{marginBottom:32}}>
+        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+          <div style={{fontSize:'var(--text-sm)', color:'var(--text-muted)'}}>Progresso estimado</div>
+          <div style={{fontSize:'var(--text-sm)', color:'var(--text-muted)', fontFamily:'var(--font-mono)'}}>
+            {progressPct}% · {tempoLabel}
+          </div>
+        </div>
+        <div style={{height:6, background:'var(--bege)', borderRadius:3, overflow:'hidden'}}>
+          <div style={{
+            height:'100%',
+            width: progressPct + '%',
+            background:'linear-gradient(90deg, var(--bordo), var(--amarelo))',
+            borderRadius:3,
+            transition:'width 1s linear',
+          }} />
+        </div>
+      </div>
+
+      {/* Lista de passos */}
+      <div style={{display:'flex', flexDirection:'column', gap:16, marginBottom:32}}>
+        {PASSOS.map((passo, i) => {
+          const done    = i < stepIdx;
+          const active  = i === stepIdx;
+          const pending = i > stepIdx;
+          return (
+            <div key={i} style={{display:'flex', gap:14, alignItems:'flex-start', opacity: pending ? 0.35 : 1, transition:'opacity 0.4s'}}>
+              {/* Ícone */}
+              <div style={{
+                width:28, height:28, borderRadius:'50%', flexShrink:0,
+                display:'flex', alignItems:'center', justifyContent:'center',
+                fontSize:13, fontWeight:700,
+                background: done ? 'var(--green)' : active ? 'var(--bordo)' : 'var(--bege)',
+                color: (done || active) ? '#fff' : 'var(--text-muted)',
+                marginTop:1,
+              }}>
+                {done ? '✓' : active ? <span style={{display:'inline-block', animation:'spin 1s linear infinite'}}>⟳</span> : '·'}
+              </div>
+              {/* Texto */}
+              <div>
+                <div style={{fontWeight: active ? 600 : 500, color: active ? 'var(--text-primary)' : 'var(--text-secondary)'}}>
+                  {passo.msg}
+                </div>
+                {/* Badges dos arquivos no passo 0 */}
+                {i === 0 && arquivos.length > 0 && (
+                  <div style={{display:'flex', flexDirection:'column', gap:4, marginTop:6}}>
+                    {arquivos.map((f, fi) => (
+                      <div key={fi} style={{display:'flex', alignItems:'center', gap:6, fontSize:'var(--text-sm)', color:'var(--text-muted)'}}>
+                        <span>📄</span>
+                        <span style={{fontFamily:'var(--font-mono)'}}>{f.name}</span>
+                        <span style={{color:'var(--text-muted)'}}>({(f.size/1024).toFixed(0)} KB)</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Sub-mensagem no passo ativo final */}
+                {active && i === 3 && (
+                  <div style={{fontSize:'var(--text-sm)', color:'var(--text-muted)', marginTop:4, fontStyle:'italic'}}>
+                    {subMensagem}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Aviso */}
+      <div style={{
+        padding:'12px 16px', borderRadius:8, background:'var(--bege)',
+        fontSize:'var(--text-sm)', color:'var(--text-muted)', textAlign:'center',
+      }}>
+        Não feche esta aba. O resultado aparecerá aqui assim que a IA terminar.
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
    Import PDF via IA
    ========================================================= */
 function AdminImportPDF() {
@@ -158,15 +286,7 @@ function AdminImportPDF() {
     </div>
   );
 
-  if (fase === 'processando') return (
-    <div className="admin-card" style={{textAlign:'center', padding:64}}>
-      <div className="admin-spinner" style={{margin:'0 auto 24px'}} />
-      <div style={{fontSize:'var(--text-lg)', fontWeight:600}}>Processando com IA…</div>
-      <div style={{color:'var(--text-muted)', marginTop:8}}>
-        Aguardando DeepSeek extrair as questões do PDF. Pode levar alguns segundos.
-      </div>
-    </div>
-  );
+  if (fase === 'processando') return <ProcessingScreen arquivos={arquivos} />;
 
   if (fase === 'preview') return (
     <div className="admin-questoes">
