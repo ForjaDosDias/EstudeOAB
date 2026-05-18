@@ -107,6 +107,9 @@ router.post('/upload', requireAdmin, upload.single('csv'), async (req, res) => {
   let records;
   try {
     const content = req.file.buffer.toString('utf-8').replace(/^﻿/, ''); // strip BOM
+    const firstLine = content.split('\n')[0] || '';
+    console.log(`[upload-csv] arquivo: ${req.file.originalname} (${req.file.size} bytes)`);
+    console.log(`[upload-csv] primeira linha: ${firstLine.slice(0, 200)}`);
     records = parse(content, {
       delimiter: ';',
       columns: true,
@@ -122,6 +125,10 @@ router.post('/upload', requireAdmin, upload.single('csv'), async (req, res) => {
     return res.status(400).json({ error: 'CSV vazio ou sem dados válidos' });
   }
 
+  const colunasDetectadas = Object.keys(records[0]);
+  console.log(`[upload-csv] ${records.length} linhas · colunas: ${colunasDetectadas.join(', ')}`);
+  console.log(`[upload-csv] primeira linha parsed: enunciado="${records[0].enunciado?.slice(0,80)}" gabarito="${records[0].gabarito}"`);
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -129,78 +136,93 @@ router.post('/upload', requireAdmin, upload.single('csv'), async (req, res) => {
     let inserted = 0;
     let updated = 0;
     let skipped = 0;
+    let anuladas = 0;
     const errors = [];
 
     for (let i = 0; i < records.length; i++) {
       const row = records[i];
-      try {
-        if (!row.enunciado || row.enunciado.trim() === '') {
+
+      if (!row.enunciado || row.enunciado.trim() === '') {
+        skipped++;
+        continue;
+      }
+
+      if (row.gabarito && row.gabarito.trim().toUpperCase() === 'ANULADA') {
+        anuladas++;
+        continue;
+      }
+
+      await client.query('SAVEPOINT row_sp');
+        let result;
+        try {
+          result = await client.query(
+            `INSERT INTO questions (
+              external_id, banca, prova, edicao, ano, data_aplicacao, tipo_prova,
+              numero_questao, enunciado, comando, alternativa_a, alternativa_b,
+              alternativa_c, alternativa_d, gabarito, area_direito, materia,
+              tema, subtema, legislacao_ref, dificuldade, observacoes, explicacao
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+            ON CONFLICT (external_id) DO UPDATE SET
+              banca          = EXCLUDED.banca,
+              prova          = EXCLUDED.prova,
+              edicao         = EXCLUDED.edicao,
+              ano            = EXCLUDED.ano,
+              data_aplicacao = EXCLUDED.data_aplicacao,
+              tipo_prova     = EXCLUDED.tipo_prova,
+              numero_questao = EXCLUDED.numero_questao,
+              enunciado      = EXCLUDED.enunciado,
+              comando        = EXCLUDED.comando,
+              alternativa_a  = EXCLUDED.alternativa_a,
+              alternativa_b  = EXCLUDED.alternativa_b,
+              alternativa_c  = EXCLUDED.alternativa_c,
+              alternativa_d  = EXCLUDED.alternativa_d,
+              gabarito       = EXCLUDED.gabarito,
+              area_direito   = EXCLUDED.area_direito,
+              materia        = EXCLUDED.materia,
+              tema           = EXCLUDED.tema,
+              subtema        = EXCLUDED.subtema,
+              legislacao_ref = EXCLUDED.legislacao_ref,
+              dificuldade    = EXCLUDED.dificuldade,
+              observacoes    = EXCLUDED.observacoes,
+              explicacao     = EXCLUDED.explicacao
+            RETURNING (xmax = 0) AS is_insert`,
+            [
+              row.id         || null,
+              row.banca      || null,
+              row.prova      || null,
+              row.edicao     || null,
+              row.ano        ? parseInt(row.ano) : null,
+              row.data_aplicacao || null,
+              row.tipo_prova || null,
+              row.numero_questao ? parseInt(row.numero_questao) : null,
+              row.enunciado,
+              row.comando        || null,
+              row.alternativa_a  || null,
+              row.alternativa_b  || null,
+              row.alternativa_c  || null,
+              row.alternativa_d  || null,
+              row.gabarito       || null,
+              row.area_direito   || null,
+              row.materia        || null,
+              row.tema           || null,
+              row.subtema        || null,
+              row.legislacao_ref || null,
+              row.dificuldade    || null,
+              row.observacoes    || null,
+              row.explicacao     || null,
+            ]
+          );
+          await client.query('RELEASE SAVEPOINT row_sp');
+        } catch (insertErr) {
+          await client.query('ROLLBACK TO SAVEPOINT row_sp');
+          console.error(`[upload-csv] linha ${i + 2} erro: ${insertErr.message}`);
+          errors.push({ linha: i + 2, erro: insertErr.message });
           skipped++;
           continue;
         }
 
-        const result = await client.query(
-          `INSERT INTO questions (
-            external_id, banca, prova, edicao, ano, data_aplicacao, tipo_prova,
-            numero_questao, enunciado, comando, alternativa_a, alternativa_b,
-            alternativa_c, alternativa_d, gabarito, area_direito, materia,
-            tema, subtema, legislacao_ref, dificuldade, observacoes
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
-          ON CONFLICT (external_id) DO UPDATE SET
-            banca          = EXCLUDED.banca,
-            prova          = EXCLUDED.prova,
-            edicao         = EXCLUDED.edicao,
-            ano            = EXCLUDED.ano,
-            data_aplicacao = EXCLUDED.data_aplicacao,
-            tipo_prova     = EXCLUDED.tipo_prova,
-            numero_questao = EXCLUDED.numero_questao,
-            enunciado      = EXCLUDED.enunciado,
-            comando        = EXCLUDED.comando,
-            alternativa_a  = EXCLUDED.alternativa_a,
-            alternativa_b  = EXCLUDED.alternativa_b,
-            alternativa_c  = EXCLUDED.alternativa_c,
-            alternativa_d  = EXCLUDED.alternativa_d,
-            gabarito       = EXCLUDED.gabarito,
-            area_direito   = EXCLUDED.area_direito,
-            materia        = EXCLUDED.materia,
-            tema           = EXCLUDED.tema,
-            subtema        = EXCLUDED.subtema,
-            legislacao_ref = EXCLUDED.legislacao_ref,
-            dificuldade    = EXCLUDED.dificuldade,
-            observacoes    = EXCLUDED.observacoes
-          RETURNING (xmax = 0) AS is_insert`,
-          [
-            row.id         || null,
-            row.banca      || null,
-            row.prova      || null,
-            row.edicao     || null,
-            row.ano        ? parseInt(row.ano) : null,
-            row.data_aplicacao || null,
-            row.tipo_prova || null,
-            row.numero_questao ? parseInt(row.numero_questao) : null,
-            row.enunciado,
-            row.comando        || null,
-            row.alternativa_a  || null,
-            row.alternativa_b  || null,
-            row.alternativa_c  || null,
-            row.alternativa_d  || null,
-            row.gabarito       || null,
-            row.area_direito   || null,
-            row.materia        || null,
-            row.tema           || null,
-            row.subtema        || null,
-            row.legislacao_ref || null,
-            row.dificuldade    || null,
-            row.observacoes    || null,
-          ]
-        );
-
-        if (result.rows[0]?.is_insert) inserted++;
-        else updated++;
-      } catch (rowErr) {
-        errors.push({ linha: i + 2, erro: rowErr.message });
-        skipped++;
-      }
+      if (result.rows[0]?.is_insert) inserted++;
+      else updated++;
     }
 
     await client.query('COMMIT');
@@ -210,6 +232,8 @@ router.post('/upload', requireAdmin, upload.single('csv'), async (req, res) => {
       inserted,
       updated,
       skipped,
+      anuladas,
+      colunas_detectadas: colunasDetectadas,
       errors: errors.slice(0, 10),
     });
   } catch (err) {
@@ -218,6 +242,18 @@ router.post('/upload', requireAdmin, upload.single('csv'), async (req, res) => {
     res.status(500).json({ error: `Erro ao salvar questões: ${err.message}` });
   } finally {
     client.release();
+  }
+});
+
+// GET /api/questions/:id  — deve ficar após as rotas com paths fixos (/sortear, /stats, /upload)
+router.get('/:id', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM questions WHERE id = $1', [req.params.id]);
+    if (!result.rows[0]) return res.status(404).json({ error: 'Questão não encontrada' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('GET /questions/:id error:', err.message);
+    res.status(500).json({ error: 'Erro ao buscar questão' });
   }
 });
 

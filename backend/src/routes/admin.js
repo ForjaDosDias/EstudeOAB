@@ -364,27 +364,31 @@ router.post('/bulk-save', requireAdmin, async (req, res) => {
 });
 
 // PUT /api/admin/questions/:id — editar questão existente
+// Quando source='moderation' no body, seta corrigido_por_humano=TRUE
 router.put('/questions/:id', requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { enunciado, alternativa_a, alternativa_b, alternativa_c, alternativa_d,
           gabarito, area_direito, banca, edicao, ano, materia, dificuldade,
-          legislacao_ref, explicacao } = req.body;
+          legislacao_ref, explicacao, source } = req.body;
 
   if (!enunciado?.trim()) {
     return res.status(400).json({ error: 'Enunciado é obrigatório' });
   }
+
+  const corrigidoPorHumano = source === 'moderation';
 
   try {
     const result = await pool.query(
       `UPDATE questions SET
          enunciado=$1, alternativa_a=$2, alternativa_b=$3, alternativa_c=$4, alternativa_d=$5,
          gabarito=$6, area_direito=$7, banca=$8, edicao=$9, ano=$10, materia=$11, dificuldade=$12,
-         legislacao_ref=$13, explicacao=$14
-       WHERE id=$15 RETURNING *`,
+         legislacao_ref=$13, explicacao=$14,
+         corrigido_por_humano = CASE WHEN $15 THEN TRUE ELSE corrigido_por_humano END
+       WHERE id=$16 RETURNING *`,
       [enunciado, alternativa_a||null, alternativa_b||null, alternativa_c||null, alternativa_d||null,
        gabarito||null, area_direito||null, banca||null, edicao||null,
        ano ? parseInt(ano) : null, materia||null, dificuldade||null,
-       legislacao_ref||null, explicacao||null, id]
+       legislacao_ref||null, explicacao||null, corrigidoPorHumano, id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Questão não encontrada' });
     res.json(result.rows[0]);

@@ -787,4 +787,4 @@ function AdminQuestoes() {
   );
 }
 
-window.Admin = { AdminPage };
+window.Admin = { AdminPage, QuestaoModal };

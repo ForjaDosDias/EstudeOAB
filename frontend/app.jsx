@@ -105,12 +105,14 @@ function App() {
         onNavigate={handleNavigate}
         onPracticeStart={handlePracticeStart}
         onLogout={doLogout}
+        onUserUpdate={setUser}
       >
         {page === 'dashboard' && <window.Shell.Dashboard user={user} onPracticeStart={handlePracticeStart} onNavigate={handleNavigate} />}
         {page === 'practice'  && <window.Practice.PracticeFlow user={user} token={token} onUserUpdate={setUser} onExit={() => setPage('dashboard')} onNavigate={handleNavigate} />}
         {page === 'stats'     && <window.Stats.StatsPage onNavigate={handleNavigate} />}
         {page === 'review'    && <window.Stats.StatsPage onNavigate={handleNavigate} />}
-        {page === 'admin'     && user?.role === 'admin' && <window.Admin.AdminPage token={token} onNavigate={handleNavigate} />}
+        {page === 'admin'      && user?.role === 'admin' && <window.Admin.AdminPage token={token} onNavigate={handleNavigate} />}
+        {page === 'moderation' && user?.role === 'admin' && <window.Moderation.ModerationPage onNavigate={handleNavigate} />}
         {page === 'admin'     && user?.role !== 'admin' && (
           <div style={{ padding: 64, textAlign: 'center', color: 'var(--text-muted)' }}>
             <div style={{ fontSize: 40, marginBottom: 16 }}>⚠</div>

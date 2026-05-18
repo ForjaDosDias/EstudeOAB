@@ -1,17 +1,40 @@
 /* global React */
-const { useState: useStateShell, useEffect: useEffectShell } = React;
+const { useState: useStateShell, useEffect: useEffectShell, useCallback: useCallbackShell } = React;
 
 /* =========================================================
    App Shell — sidebar + topbar do app autenticado
    ========================================================= */
-function AppShell({ user, page, onNavigate, onPracticeStart, onLogout, children }) {
-  const [showUserMenu, setShowUserMenu] = useStateShell(false);
+function AppShell({ user, page, onNavigate, onPracticeStart, onLogout, onUserUpdate, children }) {
+  const [showUserMenu,    setShowUserMenu]    = useStateShell(false);
+  const [showProfile,     setShowProfile]     = useStateShell(false);
+  const [notifications,   setNotifications]   = useStateShell([]);
+  const [naoLidas,        setNaoLidas]        = useStateShell(0);
+  const [showNotifList,   setShowNotifList]   = useStateShell(false);
+
+  useEffectShell(() => {
+    window.apiFetch('/notifications')
+      .then(d => { setNotifications(d.notifications || []); setNaoLidas(d.nao_lidas || 0); })
+      .catch(() => {});
+  }, []);
+
+  const abrirNotificacoes = () => {
+    setShowNotifList(true);
+    setShowUserMenu(false);
+    if (naoLidas > 0) {
+      window.apiFetch('/notifications/read-all', { method: 'PATCH' })
+        .then(() => setNaoLidas(0))
+        .catch(() => {});
+    }
+  };
 
   const navItems = [
-    { id: 'dashboard', label: 'Início',       icon: '◆' },
-    { id: 'practice',  label: 'Praticar',     icon: '▶' },
-    { id: 'stats',     label: 'Estatísticas', icon: '◇' },
-    ...(user?.role === 'admin' ? [{ id: 'admin', label: 'Admin', icon: '⚙' }] : []),
+    { id: 'dashboard',  label: 'Início',       icon: '◆' },
+    { id: 'practice',   label: 'Praticar',     icon: '▶' },
+    { id: 'stats',      label: 'Estatísticas', icon: '◇' },
+    ...(user?.role === 'admin' ? [
+      { id: 'admin',      label: 'Admin',    icon: '⚙' },
+      { id: 'moderation', label: 'Revisões', icon: '⚑' },
+    ] : []),
   ];
 
   return (
@@ -44,16 +67,43 @@ function AppShell({ user, page, onNavigate, onPracticeStart, onLogout, children 
           </div>
         </button>
 
-        <div className="sidebar-user" style={{ position: 'relative' }}>
-          <div className="sidebar-avatar">{(user?.nome?.[0] || 'E').toUpperCase()}</div>
+        <div
+          className="sidebar-user"
+          style={{ position: 'relative' }}
+          onClick={(e) => { e.stopPropagation(); setShowUserMenu(m => !m); setShowNotifList(false); }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={e => e.key === 'Enter' && setShowUserMenu(m => !m)}
+        >
+          <div className="sidebar-avatar" style={{position:'relative'}}>
+            {(user?.nome?.[0] || 'E').toUpperCase()}
+            {naoLidas > 0 && (
+              <span style={{
+                position:'absolute', top:-4, right:-4,
+                background:'var(--bordo)', color:'#fff',
+                borderRadius:'50%', width:16, height:16,
+                fontSize:10, fontWeight:700,
+                display:'flex', alignItems:'center', justifyContent:'center',
+                lineHeight:1,
+              }}>{naoLidas > 9 ? '9+' : naoLidas}</span>
+            )}
+          </div>
           <div className="sidebar-user-info">
             <div className="sidebar-user-name">{user?.nome?.split(' ')[0] || 'Estudante'}</div>
             <div className="sidebar-user-meta">⚡ {user?.xp || 0} XP · 🔥 {user?.streak || 0}d</div>
           </div>
-          <button className="sidebar-user-more" onClick={() => setShowUserMenu(m => !m)}>⋯</button>
+          <span className="sidebar-user-more">⋯</span>
           {showUserMenu && (
             <div className="sidebar-user-popup fade-up">
-              <button className="sidebar-user-popup-item logout" onClick={() => { setShowUserMenu(false); onLogout?.(); }}>
+              {naoLidas > 0 && (
+                <button className="sidebar-user-popup-item" onClick={(e) => { e.stopPropagation(); abrirNotificacoes(); }}>
+                  🔔 {naoLidas} notificação{naoLidas !== 1 ? 'ões' : ''}
+                </button>
+              )}
+              <button className="sidebar-user-popup-item" onClick={(e) => { e.stopPropagation(); setShowUserMenu(false); setShowProfile(true); }}>
+                Editar perfil
+              </button>
+              <button className="sidebar-user-popup-item logout" onClick={(e) => { e.stopPropagation(); setShowUserMenu(false); onLogout?.(); }}>
                 Sair da conta
               </button>
             </div>
@@ -64,6 +114,21 @@ function AppShell({ user, page, onNavigate, onPracticeStart, onLogout, children 
       <main className="shell-main" onClick={() => setShowUserMenu(false)}>
         {children}
       </main>
+
+      {showProfile && (
+        <UserProfilePanel
+          user={user}
+          onClose={() => setShowProfile(false)}
+          onUserUpdate={onUserUpdate}
+        />
+      )}
+
+      {showNotifList && (
+        <NotificacoesPanel
+          notifications={notifications}
+          onClose={() => setShowNotifList(false)}
+        />
+      )}
     </div>
   );
 }
@@ -98,6 +163,25 @@ function Dashboard({ user, onPracticeStart, onNavigate }) {
   const metaPct  = Math.round((meta.feito / Math.max(meta.alvo, 1)) * 100);
   const topAreas = [...areas].sort((a, b) => b.pct - a.pct).slice(0, 4);
 
+  const MENSAGENS_META = [
+    'Meta batida! Você está construindo algo sólido, questão a questão.',
+    'Parabéns! Cada questão de hoje é um passo a mais rumo à aprovação.',
+    'Meta do dia concluída! Seu futuro aprovado agradece.',
+    'Missão cumprida! Cada dia de consistência é um tijolo a mais na sua aprovação.',
+    'Meta alcançada! Você honrou o compromisso que fez com você mesmo.',
+    'Incrível! Continue assim e a aprovação é só questão de tempo.',
+    'Meta do dia: feita! Descanse sabendo que hoje você evoluiu.',
+    'Você bateu a meta! A aprovação começa exatamente com dias como este.',
+    'Meta concluída! Cada dia assim te coloca mais perto do diploma.',
+    'Excelente! Você demonstrou hoje que quer mesmo passar no OAB.',
+    'Meta do dia superada! O hábito diário é sua maior arma.',
+    'Que disciplina! Continue nesse ritmo e a aprovação vem naturalmente.',
+    ...(user?.streak >= 2 ? [`Já são ${user.streak} dias seguidos! Você de ontem não chegaria onde o de hoje chegou.`] : []),
+  ];
+  const [msgIdx] = useStateShell(() => Math.floor(Math.random() * MENSAGENS_META.length));
+  const metaBatida = meta.feito >= meta.alvo && meta.alvo > 0;
+  const btnEstudo = metaBatida ? '⚡ Superar a meta' : meta.feito > 0 ? '⚡ Continuar estudo' : '⚡ Iniciar estudo';
+
   const diasParaProva = (() => {
     if (!user?.dataProva) return null;
     const diff = Math.ceil((new Date(user.dataProva) - Date.now()) / 864e5);
@@ -111,14 +195,16 @@ function Dashboard({ user, onPracticeStart, onNavigate }) {
           <div className="eyebrow">{saudacao()} · {new Date().toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'short' })}</div>
           <h1 className="page-h1">Olá, {firstName}.</h1>
           <p className="page-sub">
-            {diasParaProva
-              ? <>Faltam <strong>{diasParaProva} dias</strong> para o próximo exame. </>
-              : ''}
-            Hoje sua meta é {meta.alvo} questões.
+            {metaBatida
+              ? MENSAGENS_META[msgIdx]
+              : <>{diasParaProva
+                    ? <>Faltam <strong>{diasParaProva} dias</strong> para o próximo exame. </>
+                    : ''}
+                  Hoje sua meta é {meta.alvo} questões.</>}
           </p>
         </div>
         <div className="dash-top-actions">
-          <button className="btn btn-cta btn-lg" onClick={onPracticeStart}>⚡ Continuar estudo</button>
+          <button className="btn btn-cta btn-lg" onClick={onPracticeStart}>{btnEstudo}</button>
         </div>
       </header>
 
@@ -271,6 +357,180 @@ function Sparkline({ data }) {
         </g>
       ))}
     </svg>
+  );
+}
+
+/* =========================================================
+   Painel de perfil do usuário
+   ========================================================= */
+function UserProfilePanel({ user, onClose, onUserUpdate }) {
+  const [nome,         setNome]         = useStateShell(user?.nome  || '');
+  const [email,        setEmail]        = useStateShell(user?.email || '');
+  const [dadosLoading, setDadosLoading] = useStateShell(false);
+  const [dadosErro,    setDadosErro]    = useStateShell(null);
+  const [dadosOk,      setDadosOk]      = useStateShell(false);
+
+  const [senhaAtual,    setSenhaAtual]    = useStateShell('');
+  const [novaSenha,     setNovaSenha]     = useStateShell('');
+  const [confirma,      setConfirma]      = useStateShell('');
+  const [senhaLoading,  setSenhaLoading]  = useStateShell(false);
+  const [senhaErro,     setSenhaErro]     = useStateShell(null);
+  const [senhaOk,       setSenhaOk]       = useStateShell(false);
+
+  const dadosAlterado = nome.trim() !== (user?.nome || '') || email.trim() !== (user?.email || '');
+
+  const saveDados = async () => {
+    setDadosLoading(true);
+    setDadosErro(null);
+    setDadosOk(false);
+    try {
+      const res = await window.apiFetch('/auth/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({ nome: nome.trim(), email: email.trim() }),
+      });
+      localStorage.setItem('oab_token', res.token);
+      onUserUpdate?.(res.user);
+      setDadosOk(true);
+      setTimeout(() => setDadosOk(false), 3000);
+    } catch (err) {
+      setDadosErro(err.error || 'Erro ao salvar');
+    } finally {
+      setDadosLoading(false);
+    }
+  };
+
+  const saveSenha = async () => {
+    if (novaSenha !== confirma) { setSenhaErro('As senhas não coincidem'); return; }
+    setSenhaLoading(true);
+    setSenhaErro(null);
+    setSenhaOk(false);
+    try {
+      const res = await window.apiFetch('/auth/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({ senhaAtual, novaSenha }),
+      });
+      localStorage.setItem('oab_token', res.token);
+      setSenhaAtual(''); setNovaSenha(''); setConfirma('');
+      setSenhaOk(true);
+      setTimeout(() => setSenhaOk(false), 3000);
+    } catch (err) {
+      setSenhaErro(err.error || 'Erro ao alterar senha');
+    } finally {
+      setSenhaLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel profile-panel" onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <div className="eyebrow">Conta</div>
+            <div className="modal-title">Minha conta</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="profile-section">
+          <div className="profile-section-title">Dados pessoais</div>
+          <div className="input-group">
+            <label className="input-label">Nome</label>
+            <input className="input-field" value={nome} onChange={e => setNome(e.target.value)} />
+          </div>
+          <div className="input-group" style={{ marginTop: 12 }}>
+            <label className="input-label">E-mail</label>
+            <input className="input-field" type="email" value={email} onChange={e => setEmail(e.target.value)} />
+          </div>
+          {dadosErro && (
+            <div className="login-error" style={{ marginTop: 12 }}>
+              <span>✕</span> {dadosErro}
+            </div>
+          )}
+          <div className="profile-save-row">
+            <button className="btn btn-primary" disabled={dadosLoading || !dadosAlterado} onClick={saveDados}>
+              {dadosLoading ? 'Salvando…' : 'Salvar'}
+            </button>
+            {dadosOk && <span className="profile-ok">✓ Salvo com sucesso</span>}
+          </div>
+        </div>
+
+        <div className="profile-section">
+          <div className="profile-section-title">Alterar senha</div>
+          <div className="input-group">
+            <label className="input-label">Senha atual</label>
+            <input className="input-field" type="password" value={senhaAtual}
+                   onChange={e => setSenhaAtual(e.target.value)} autoComplete="current-password" />
+          </div>
+          <div className="input-group" style={{ marginTop: 12 }}>
+            <label className="input-label">Nova senha</label>
+            <input className="input-field" type="password" value={novaSenha}
+                   onChange={e => setNovaSenha(e.target.value)} autoComplete="new-password" />
+            <div className="input-hint">Mínimo 8 caracteres.</div>
+          </div>
+          <div className="input-group" style={{ marginTop: 12 }}>
+            <label className="input-label">Confirmar nova senha</label>
+            <input className="input-field" type="password" value={confirma}
+                   onChange={e => setConfirma(e.target.value)} autoComplete="new-password" />
+          </div>
+          {senhaErro && (
+            <div className="login-error" style={{ marginTop: 12 }}>
+              <span>✕</span> {senhaErro}
+            </div>
+          )}
+          <div className="profile-save-row">
+            <button className="btn btn-primary" disabled={senhaLoading || !senhaAtual || !novaSenha || !confirma} onClick={saveSenha}>
+              {senhaLoading ? 'Alterando…' : 'Alterar senha'}
+            </button>
+            {senhaOk && <span className="profile-ok">✓ Senha alterada</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   Painel de notificações
+   ========================================================= */
+function NotificacoesPanel({ notifications, onClose }) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-panel profile-panel" style={{maxWidth:440}} onClick={e => e.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <div className="eyebrow">Notificações</div>
+            <div className="modal-title">Suas atualizações</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+
+        {notifications.length === 0 && (
+          <div style={{padding:'32px 0', textAlign:'center', color:'var(--text-muted)'}}>
+            <div style={{fontSize:32, marginBottom:8}}>🔔</div>
+            <div>Nenhuma notificação por enquanto.</div>
+          </div>
+        )}
+
+        <div style={{display:'flex', flexDirection:'column', gap:12}}>
+          {notifications.map(n => (
+            <div key={n.id} style={{
+              padding:'12px 16px', borderRadius:8,
+              background: n.lida ? 'var(--bg-surface)' : 'var(--bege)',
+              border:'1px solid var(--border)',
+            }}>
+              <div style={{fontWeight:600, marginBottom:4, fontSize:'var(--text-sm)'}}>
+                {!n.lida && <span style={{display:'inline-block', width:8, height:8, borderRadius:'50%', background:'var(--bordo)', marginRight:6, verticalAlign:'middle'}} />}
+                {n.titulo}
+              </div>
+              <div style={{fontSize:'var(--text-sm)', color:'var(--text-secondary)'}}>{n.mensagem}</div>
+              <div style={{fontSize:11, color:'var(--text-muted)', marginTop:4}}>
+                {new Date(n.created_at).toLocaleDateString('pt-BR', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'})}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

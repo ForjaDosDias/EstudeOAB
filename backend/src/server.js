@@ -5,8 +5,10 @@ const questionsRouter = require('./routes/questions');
 const authRouter = require('./routes/auth');
 const sessionsRouter = require('./routes/sessions');
 const answersRouter = require('./routes/answers');
-const statsRouter  = require('./routes/stats');
-const adminRouter  = require('./routes/admin');
+const statsRouter         = require('./routes/stats');
+const adminRouter         = require('./routes/admin');
+const reportsRouter       = require('./routes/reports');
+const notificationsRouter = require('./routes/notifications');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -18,8 +20,10 @@ app.use('/api/auth', authRouter);
 app.use('/api/questions', questionsRouter);
 app.use('/api/sessions', sessionsRouter);
 app.use('/api/answers', answersRouter);
-app.use('/api/stats',  statsRouter);
-app.use('/api/admin', adminRouter);
+app.use('/api/stats',         statsRouter);
+app.use('/api/admin',         adminRouter);
+app.use('/api/reports',       reportsRouter);
+app.use('/api/notifications', notificationsRouter);
 
 app.get('/api/health', async (req, res) => {
   try {

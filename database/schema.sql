@@ -99,3 +99,48 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS area_segunda_fase VARCHAR(50);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS data_prova        DATE;
 
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS explicacao TEXT;
+
+-- ── Colunas adicionais em questions ───────────────────────────────────────────
+
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS corrigido_por_humano BOOLEAN DEFAULT FALSE;
+
+-- ── Reports de usuários sobre questões ────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS reports (
+  id          SERIAL PRIMARY KEY,
+  user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+  comentario  TEXT NOT NULL,
+  status      VARCHAR(20) DEFAULT 'pending',
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  resolved_at TIMESTAMPTZ,
+  UNIQUE(user_id, question_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_reports_status      ON reports(status);
+CREATE INDEX IF NOT EXISTS idx_reports_question    ON reports(question_id);
+
+-- ── Histórico de edições dos reports ──────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS report_edits (
+  id         SERIAL PRIMARY KEY,
+  report_id  INTEGER NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+  comentario TEXT NOT NULL,
+  editado_em TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_report_edits_report ON report_edits(report_id);
+
+-- ── Notificações in-app ────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id         SERIAL PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tipo       VARCHAR(50) NOT NULL,
+  titulo     TEXT NOT NULL,
+  mensagem   TEXT NOT NULL,
+  lida       BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, lida);
