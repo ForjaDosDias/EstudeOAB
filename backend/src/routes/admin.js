@@ -163,18 +163,43 @@ router.post('/import-pdf', requireAdmin, (req, res, next) => {
   console.log(`[import-pdf] Job ${jobId} — 4 lotes por intervalo (Q1-20, Q21-40, Q41-60, Q61-80)`);
   res.json({ jobId, status: 'processing' });
 
-  // Tenta recuperar JSON mesmo quando a resposta foi truncada por max_tokens
-  function extrairQuestoes(raw) {
+  // Tenta recuperar JSON mesmo quando a resposta foi truncada ou malformada
+  function extrairQuestoes(raw, label) {
+    // 1. Parse completo
     const completo = raw.match(/\[[\s\S]*\]/);
     if (completo) {
-      try { return JSON.parse(completo[0]); } catch { /* cai para recuperação */ }
+      try { return JSON.parse(completo[0]); } catch (e) {
+        console.warn(`[import-pdf] ${label} — parse completo falhou: ${e.message.slice(0, 120)}`);
+      }
     }
+
+    // 2. Recuperação por último objeto completo
     const abreArray = raw.indexOf('[');
-    if (abreArray === -1) return null;
-    const trecho = raw.slice(abreArray);
-    const ultimoFecha = trecho.lastIndexOf('},');
-    if (ultimoFecha === -1) return null;
-    try { return JSON.parse(trecho.slice(0, ultimoFecha + 1) + ']'); } catch { return null; }
+    if (abreArray !== -1) {
+      const trecho = raw.slice(abreArray);
+      const ultimoFecha = trecho.lastIndexOf('},');
+      if (ultimoFecha !== -1) {
+        try { return JSON.parse(trecho.slice(0, ultimoFecha + 1) + ']'); } catch { /* continua */ }
+      }
+    }
+
+    // 3. Extração objeto a objeto — resiliente a questões individuais malformadas
+    const questoes = [];
+    const objRe = /\{[\s\S]*?\n\s*\}/g;
+    let m;
+    while ((m = objRe.exec(raw)) !== null) {
+      try {
+        const q = JSON.parse(m[0]);
+        if (q.numero_questao && q.enunciado) questoes.push(q);
+      } catch { /* objeto inválido, pula */ }
+    }
+    if (questoes.length > 0) {
+      console.warn(`[import-pdf] ${label} — recuperação objeto-a-objeto: ${questoes.length} questões`);
+      return questoes;
+    }
+
+    console.warn(`[import-pdf] ${label} — raw (primeiros 400 chars): ${raw.slice(0, 400)}`);
+    return null;
   }
 
   // Processa em background
@@ -184,30 +209,41 @@ router.post('/import-pdf', requireAdmin, (req, res, next) => {
       const todasQuestoes = [];
 
       for (const [from, to] of RANGES) {
-        const prompt = `${makeRangePrompt(from, to)}\n\nTexto completo do caderno:\n\n${textoCaderno}`;
-        console.log(`[import-pdf] Job ${jobId} — lote Q${from}-Q${to} (${prompt.length} chars total)`);
+        const label = `Job ${jobId} Q${from}-Q${to}`;
+        const basePrompt = `${makeRangePrompt(from, to)}\n\nTexto completo do caderno:\n\n${textoCaderno}`;
+        console.log(`[import-pdf] ${label} — lote (${basePrompt.length} chars total)`);
 
-        const response = await client.messages.create({
-          model: DEEPSEEK_MODEL,
-          max_tokens: 10000,
-          messages: [{ role: 'user', content: prompt }],
-        });
+        let questoes = null;
+        const tentativas = [
+          { prompt: basePrompt, tag: '' },
+          {
+            prompt: `Retorne APENAS o array JSON, sem nenhum texto fora dos colchetes.\n\n${basePrompt}`,
+            tag: ' (retry)',
+          },
+        ];
 
-        console.log(`[import-pdf] Job ${jobId} Q${from}-Q${to} — stop_reason: ${response.stop_reason}, tokens: ${JSON.stringify(response.usage)}`);
+        for (const { prompt, tag } of tentativas) {
+          const response = await client.messages.create({
+            model: DEEPSEEK_MODEL,
+            max_tokens: 10000,
+            messages: [{ role: 'user', content: prompt }],
+          });
 
-        const raw = response.content[0]?.text || '';
-        const questoes = extrairQuestoes(raw);
+          console.log(`[import-pdf] ${label}${tag} — stop_reason: ${response.stop_reason}, tokens: ${JSON.stringify(response.usage)}`);
 
-        if (!questoes || questoes.length === 0) {
-          console.warn(`[import-pdf] Job ${jobId} Q${from}-Q${to} — sem questões extraídas`);
-          continue;
+          if (response.stop_reason === 'max_tokens') {
+            console.warn(`[import-pdf] ${label}${tag} — ATENÇÃO: resposta truncada`);
+          }
+
+          const raw = response.content[0]?.text || '';
+          questoes = extrairQuestoes(raw, `${label}${tag}`);
+          if (questoes && questoes.length > 0) break;
+          console.warn(`[import-pdf] ${label}${tag} — sem questões extraídas`);
         }
 
-        if (response.stop_reason === 'max_tokens') {
-          console.warn(`[import-pdf] Job ${jobId} Q${from}-Q${to} — ATENÇÃO: resposta truncada`);
-        }
+        if (!questoes || questoes.length === 0) continue;
 
-        console.log(`[import-pdf] Job ${jobId} Q${from}-Q${to} — ${questoes.length} questões`);
+        console.log(`[import-pdf] ${label} — ${questoes.length} questões`);
         todasQuestoes.push(...questoes);
       }
 
