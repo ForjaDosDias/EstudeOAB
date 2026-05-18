@@ -239,6 +239,27 @@ function AdminImportPDF() {
     setEditando(null);
   };
 
+  const baixarCSV = () => {
+    const cols = ['id','banca','edicao','ano','numero_questao','enunciado',
+                  'alternativa_a','alternativa_b','alternativa_c','alternativa_d',
+                  'gabarito','area_direito','materia','dificuldade','legislacao_ref','explicacao'];
+    const escapar = v => {
+      if (v == null) return '';
+      const s = String(v);
+      return s.includes(';') || s.includes('"') || s.includes('\n')
+        ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const linhas = [cols.join(';'), ...questoes.map(q => cols.map(c => escapar(q[c])).join(';'))];
+    const blob = new Blob([linhas.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), {
+      href: url,
+      download: `${questoes[0]?.edicao || 'OAB'}_questoes.csv`,
+    });
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (fase === 'upload') return (
     <div className="admin-card">
       <div className="admin-card-title">Upload dos PDFs da prova</div>
@@ -303,6 +324,7 @@ function AdminImportPDF() {
           </div>
           <div style={{display:'flex', gap:8}}>
             <button className="btn btn-quiet" onClick={() => { setFase('upload'); setQuestoes([]); setArquivos([]); setComGabarito(0); }}>← Recomeçar</button>
+            <button className="btn btn-quiet" onClick={baixarCSV}>↓ Baixar CSV</button>
             <button className="btn btn-cta" onClick={salvar}>Salvar {questoes.length} questões →</button>
           </div>
         </div>
@@ -570,6 +592,7 @@ function AdminUploadCSV({ token }) {
                 <div className="admin-result-stats">
                   <span className="chip chip-green">+{result.inserted} inseridas</span>
                   {result.updated > 0 && <span className="chip chip-azul">{result.updated} atualizadas</span>}
+                  {result.anuladas > 0 && <span className="chip chip-neutral">{result.anuladas} anuladas</span>}
                   {result.skipped > 0 && <span className="chip chip-neutral">{result.skipped} ignoradas</span>}
                 </div>
               </div>
