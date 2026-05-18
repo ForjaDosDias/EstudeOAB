@@ -144,3 +144,14 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, lida);
+
+-- ── Log de edições de questões ─────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS question_edits (
+  id          SERIAL PRIMARY KEY,
+  question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+  admin_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  editado_em  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_question_edits_q ON question_edits(question_id);

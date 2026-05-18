@@ -391,10 +391,35 @@ router.put('/questions/:id', requireAdmin, async (req, res) => {
        legislacao_ref||null, explicacao||null, corrigidoPorHumano, id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Questão não encontrada' });
+
+    // Log de auditoria (fire-and-forget — não bloqueia a resposta)
+    pool.query(
+      'INSERT INTO question_edits (question_id, admin_id) VALUES ($1, $2)',
+      [id, req.user.userId]
+    )?.catch(err => console.error('question_edits insert error:', err.message));
+
     res.json(result.rows[0]);
   } catch (err) {
     console.error('PUT /admin/questions error:', err.message);
     res.status(500).json({ error: 'Erro ao atualizar questão' });
+  }
+});
+
+// GET /api/admin/questions/:id/edits — histórico de edições da questão
+router.get('/questions/:id/edits', requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT qe.id, qe.editado_em, u.nome AS admin_nome, u.email AS admin_email
+       FROM question_edits qe
+       LEFT JOIN users u ON u.id = qe.admin_id
+       WHERE qe.question_id = $1
+       ORDER BY qe.editado_em DESC`,
+      [req.params.id]
+    );
+    res.json({ edits: result.rows });
+  } catch (err) {
+    console.error('GET /admin/questions/:id/edits error:', err.message);
+    res.status(500).json({ error: 'Erro ao buscar histórico de edições' });
   }
 });
 
