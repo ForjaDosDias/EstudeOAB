@@ -83,6 +83,7 @@ router.get('/stats', async (req, res) => {
     const result = await pool.query(`
       SELECT
         COUNT(*)                                      AS total,
+        COUNT(*) FILTER (WHERE explicacao IS NOT NULL) AS com_explicacao,
         COUNT(DISTINCT banca)                         AS bancas,
         COUNT(DISTINCT area_direito)                  AS areas,
         COUNT(DISTINCT edicao)                        AS edicoes,

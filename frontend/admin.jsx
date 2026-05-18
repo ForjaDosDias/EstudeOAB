@@ -623,6 +623,7 @@ function AdminQuestoes() {
   const [filters,  setFilters]   = useStateAdmin({ area: '', banca: '', dificuldade: '' });
   const [page,     setPage]      = useStateAdmin(0);
   const [editando, setEditando]  = useStateAdmin(null);
+  const [bulkJob,  setBulkJob]   = useStateAdmin(null); // { jobId, total, done, status, errors }
   const limit = 20;
 
   const load = async () => {
@@ -647,7 +648,33 @@ function AdminQuestoes() {
 
   const handleFilter = (key, val) => { setFilters(f => ({ ...f, [key]: val })); setPage(0); };
 
-  const [gerando, setGerando] = useStateAdmin(null); // id da questão sendo gerada
+  const iniciarBulkExplicacoes = async () => {
+    try {
+      const data = await adminFetch('/admin/bulk-explicacoes', { method: 'POST' });
+      if (data.total === 0) { alert(data.mensagem); return; }
+      setBulkJob({ jobId: data.jobId, total: data.total, done: 0, status: 'processing', errors: [] });
+
+      const poll = setInterval(async () => {
+        try {
+          const status = await adminFetch(`/admin/bulk-explicacoes/${data.jobId}`);
+          setBulkJob(j => ({ ...j, ...status }));
+          if (status.status !== 'processing') {
+            clearInterval(poll);
+            load();
+          }
+        } catch { clearInterval(poll); }
+      }, 2000);
+    } catch (err) {
+      alert(err.error || 'Erro ao iniciar geração em lote');
+    }
+  };
+
+  const cancelarBulk = async () => {
+    if (!bulkJob?.jobId) return;
+    await adminFetch(`/admin/bulk-explicacoes/${bulkJob.jobId}/cancel`, { method: 'POST' }).catch(() => {});
+    setBulkJob(j => ({ ...j, status: 'cancelled' }));
+    load();
+  };
 
   const salvarEdicao = async (q) => {
     try {
@@ -671,17 +698,7 @@ function AdminQuestoes() {
     }
   };
 
-  const gerarExplicacao = async (id) => {
-    setGerando(id);
-    try {
-      await adminFetch(`/admin/questions/${id}/explicacao`, { method: 'POST' });
-      load(); // recarrega tabela com explicação salva
-    } catch (err) {
-      alert(err.error || 'Erro ao gerar explicação');
-    } finally {
-      setGerando(null);
-    }
-  };
+  const semExplicacao = stats ? parseInt(stats.total) - (stats.com_explicacao || 0) : 0;
 
   return (
     <div className="admin-questoes">
@@ -691,6 +708,47 @@ function AdminQuestoes() {
           <div className="stat-card"><div className="stat-label">Bancas</div><div className="stat-value">{stats.bancas}</div></div>
           <div className="stat-card"><div className="stat-label">Áreas</div><div className="stat-value">{stats.areas}</div></div>
           <div className="stat-card"><div className="stat-label">Edições</div><div className="stat-value">{stats.edicoes}</div></div>
+        </div>
+      )}
+
+      {/* Barra de progresso do job de lote */}
+      {bulkJob && bulkJob.status !== 'done' && bulkJob.status !== 'cancelled' && (
+        <div className="admin-card" style={{marginBottom:12}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8}}>
+            <div style={{fontWeight:600}}>Gerando explicações com IA…</div>
+            <div style={{display:'flex', gap:8, alignItems:'center'}}>
+              <span style={{fontFamily:'var(--font-mono)', fontSize:'var(--text-sm)', color:'var(--text-muted)'}}>
+                {bulkJob.done} / {bulkJob.total}
+              </span>
+              <button className="btn btn-quiet btn-sm" style={{color:'var(--bordo)'}} onClick={cancelarBulk}>Cancelar</button>
+            </div>
+          </div>
+          <div style={{height:6, background:'var(--bege)', borderRadius:3, overflow:'hidden'}}>
+            <div style={{
+              height:'100%', borderRadius:3, transition:'width 0.5s ease',
+              width: `${bulkJob.total > 0 ? Math.round((bulkJob.done / bulkJob.total) * 100) : 0}%`,
+              background:'linear-gradient(90deg, var(--bordo), var(--amarelo))',
+            }} />
+          </div>
+          {bulkJob.errors.length > 0 && (
+            <div style={{marginTop:8, fontSize:12, color:'var(--bordo)'}}>
+              {bulkJob.errors.length} erro{bulkJob.errors.length !== 1 ? 's' : ''} — continuando com as demais questões
+            </div>
+          )}
+        </div>
+      )}
+
+      {bulkJob?.status === 'done' && (
+        <div className="admin-result success" style={{marginBottom:12}}>
+          <div className="admin-result-icon">✓</div>
+          <div className="admin-result-body">
+            <div className="admin-result-title">Explicações geradas!</div>
+            <div className="admin-result-stats">
+              <span className="chip chip-green">{bulkJob.done - bulkJob.errors.length} com sucesso</span>
+              {bulkJob.errors.length > 0 && <span className="chip chip-bordo">{bulkJob.errors.length} com erro</span>}
+            </div>
+          </div>
+          <button className="btn btn-quiet btn-sm" onClick={() => setBulkJob(null)}>✕</button>
         </div>
       )}
 
@@ -711,6 +769,11 @@ function AdminQuestoes() {
             <option value="alta">Alta</option>
           </select>
           <button className="btn btn-quiet btn-sm" onClick={() => { setFilters({ area:'', banca:'', dificuldade:'' }); setPage(0); }}>Limpar</button>
+          {!bulkJob && semExplicacao > 0 && (
+            <button className="btn btn-cta btn-sm" style={{marginLeft:'auto'}} onClick={iniciarBulkExplicacoes}>
+              ✦ Gerar {semExplicacao} explicação{semExplicacao !== 1 ? 'ões' : ''} com IA
+            </button>
+          )}
         </div>
 
         {loading && <div className="admin-loading"><div className="admin-spinner" /> Carregando…</div>}
@@ -745,14 +808,6 @@ function AdminQuestoes() {
                         : <span style={{color:'var(--text-muted)'}}>—</span>}
                     </td>
                     <td style={{whiteSpace:'nowrap'}}>
-                      {!q.explicacao && q.gabarito && (
-                        <button className="btn btn-quiet btn-sm" style={{marginRight:4}}
-                                disabled={gerando === q.id}
-                                onClick={() => gerarExplicacao(q.id)}
-                                title="Gerar explicação com IA">
-                          {gerando === q.id ? '…' : '✦'}
-                        </button>
-                      )}
                       <button className="btn btn-quiet btn-sm" style={{marginRight:4}}
                               onClick={() => setEditando({ q: { ...q, id: q.id, area_direito: q.area_direito } })}>
                         Editar

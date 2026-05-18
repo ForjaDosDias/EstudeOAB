@@ -398,21 +398,8 @@ router.put('/questions/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// POST /api/admin/questions/:id/explicacao — gera explicação via DeepSeek
-router.post('/questions/:id/explicacao', requireAdmin, async (req, res) => {
-  try {
-    const qRes = await pool.query(
-      `SELECT id, banca, edicao, ano, numero_questao, enunciado, comando,
-              alternativa_a, alternativa_b, alternativa_c, alternativa_d,
-              gabarito, area_direito, materia, legislacao_ref
-       FROM questions WHERE id = $1`,
-      [req.params.id]
-    );
-    const q = qRes.rows[0];
-    if (!q) return res.status(404).json({ error: 'Questão não encontrada' });
-    if (!q.gabarito) return res.status(400).json({ error: 'Questão sem gabarito — defina o gabarito antes de gerar a explicação' });
-
-    const prompt = `Você é um especialista em provas da OAB. Analise a questão abaixo e retorne APENAS um JSON com dois campos.
+function makeExplicacaoPrompt(q) {
+  return `Você é um especialista em provas da OAB. Analise a questão abaixo e retorne APENAS um JSON com dois campos.
 
 Questão:
 Banca: ${q.banca || 'OAB'} | Edição: ${q.edicao || ''} | Área: ${q.area_direito || ''} | Matéria: ${q.materia || ''}
@@ -432,12 +419,27 @@ Retorne APENAS este JSON (sem markdown):
   "explicacao": "Explicação didática e objetiva de por que a alternativa ${q.gabarito} está correta e por que as outras estão erradas. Máximo 3 parágrafos.",
   "legislacao_ref": "Artigo e diploma legal principal, ex: Art. 186 · CC/2002"
 }`;
+}
+
+// POST /api/admin/questions/:id/explicacao — gera explicação individual via DeepSeek
+router.post('/questions/:id/explicacao', requireAdmin, async (req, res) => {
+  try {
+    const qRes = await pool.query(
+      `SELECT id, banca, edicao, ano, numero_questao, enunciado, comando,
+              alternativa_a, alternativa_b, alternativa_c, alternativa_d,
+              gabarito, area_direito, materia, legislacao_ref
+       FROM questions WHERE id = $1`,
+      [req.params.id]
+    );
+    const q = qRes.rows[0];
+    if (!q) return res.status(404).json({ error: 'Questão não encontrada' });
+    if (!q.gabarito) return res.status(400).json({ error: 'Questão sem gabarito — defina o gabarito antes de gerar a explicação' });
 
     const client = makeClient();
     const response = await client.messages.create({
       model: DEEPSEEK_MODEL,
       max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: makeExplicacaoPrompt(q) }],
     });
 
     const raw = response.content[0]?.text || '';
@@ -458,6 +460,83 @@ Retorne APENAS este JSON (sem markdown):
     console.error('POST /admin/questions/:id/explicacao error:', err.message);
     res.status(502).json({ error: `Erro ao gerar explicação: ${err.message}` });
   }
+});
+
+// POST /api/admin/bulk-explicacoes — gera explicações para TODAS as questões sem explicação
+router.post('/bulk-explicacoes', requireAdmin, async (req, res) => {
+  const pendentes = await pool.query(
+    `SELECT id, banca, edicao, ano, numero_questao, enunciado, comando,
+            alternativa_a, alternativa_b, alternativa_c, alternativa_d,
+            gabarito, area_direito, materia, legislacao_ref
+     FROM questions
+     WHERE explicacao IS NULL AND gabarito IS NOT NULL
+     ORDER BY id`
+  );
+
+  if (pendentes.rows.length === 0) {
+    return res.json({ jobId: null, total: 0, mensagem: 'Todas as questões já têm explicação.' });
+  }
+
+  const jobId = crypto.randomUUID();
+  jobs.set(jobId, { status: 'processing', total: pendentes.rows.length, done: 0, errors: [], criadoEm: Date.now() });
+  res.json({ jobId, total: pendentes.rows.length });
+
+  setImmediate(async () => {
+    const client = makeClient();
+    for (const q of pendentes.rows) {
+      const job = jobs.get(jobId);
+      if (!job || job.status === 'cancelled') break;
+
+      try {
+        const response = await client.messages.create({
+          model: DEEPSEEK_MODEL,
+          max_tokens: 1024,
+          messages: [{ role: 'user', content: makeExplicacaoPrompt(q) }],
+        });
+        const raw = response.content[0]?.text || '';
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const { explicacao, legislacao_ref } = JSON.parse(jsonMatch[0]);
+          await pool.query(
+            'UPDATE questions SET explicacao=$1, legislacao_ref=COALESCE($2, legislacao_ref) WHERE id=$3',
+            [explicacao || null, legislacao_ref || null, q.id]
+          );
+        } else {
+          job.errors.push({ id: q.id, erro: 'IA não retornou JSON válido' });
+        }
+      } catch (err) {
+        job.errors.push({ id: q.id, erro: err.message });
+      }
+
+      job.done++;
+      // Pausa breve entre chamadas para não sobrecarregar a API
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    const job = jobs.get(jobId);
+    if (job) job.status = 'done';
+    console.log(`[bulk-explicacoes] Job ${jobId} — concluído: ${jobs.get(jobId)?.done}/${jobs.get(jobId)?.total}`);
+  });
+});
+
+// GET /api/admin/bulk-explicacoes/:jobId — polling de progresso
+router.get('/bulk-explicacoes/:jobId', requireAdmin, (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job não encontrado' });
+  res.json({
+    status: job.status,
+    total:  job.total,
+    done:   job.done,
+    errors: job.errors,
+  });
+});
+
+// POST /api/admin/bulk-explicacoes/:jobId/cancel
+router.post('/bulk-explicacoes/:jobId/cancel', requireAdmin, (req, res) => {
+  const job = jobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job não encontrado' });
+  job.status = 'cancelled';
+  res.json({ cancelled: true });
 });
 
 // DELETE /api/admin/questions/:id
