@@ -42,7 +42,8 @@ describe('POST /api/admin/import-pdf', () => {
     Anthropic.mockImplementation(() => ({
       messages: { create: jest.fn().mockResolvedValue(fakeIAResponse) },
     }));
-    pdfParse.mockResolvedValue({ text: 'Questão 1. ' + 'x'.repeat(200) });
+    // Texto com edição detectável: "41º EXAME" → edicao='XLI', "2024" → ano=2024
+    pdfParse.mockResolvedValue({ text: '41º EXAME\n2024\nQuestão 1. ' + 'x'.repeat(200) });
   });
 
   it('401 sem token', async () => {
@@ -118,7 +119,11 @@ describe('POST /api/admin/import-pdf', () => {
     Anthropic.mockImplementation(() => ({
       messages: { create: jest.fn().mockResolvedValue({ ...fakeIAResponse, content: [{ text: JSON.stringify([questaoComGabarito]) }] }) },
     }));
-    pdfParse.mockResolvedValue({ text: 'Questão 1. ' + 'x'.repeat(200) });
+    // caderno (maior) e gabarito (menor) com padrão parseável: "1 2 3 4 5\nC A B D A"
+    pdfParse
+      .mockResolvedValueOnce({ text: '41º EXAME\n2024\nQuestão 1. ' + 'x'.repeat(300) })
+      // gabarito: > 50 chars para passar validação; padrão parseável → {1:'C', 2:'A', ...}
+      .mockResolvedValueOnce({ text: '1 2 3 4 5 6 7 8 9 10\nC A B D A C B D A C\n41º EXAME\n2024\n' });
 
     const res = await request(app)
       .post('/api/admin/import-pdf')

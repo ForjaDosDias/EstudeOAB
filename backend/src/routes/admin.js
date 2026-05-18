@@ -65,17 +65,18 @@ function toRomano(n) {
   return r;
 }
 
-// Prompt focado apenas em estrutura — sem gabarito, sem explicação.
-// Reduz o output de ~400 tokens/questão para ~120 tokens/questão,
-// permitindo extrair 80 questões sem estourar max_tokens.
-const PROMPT_EXTRACAO = `Você é um extrator de provas da OAB.
-Receberá um trecho de texto de um caderno de questões. Extraia SOMENTE as questões presentes neste trecho.
+// Gera prompt por intervalo de questões.
+// Envia o texto COMPLETO do caderno em cada chamada — o modelo busca pelo número,
+// evitando completamente o problema de questões cortadas na borda de chunks.
+function makeRangePrompt(from, to) {
+  return `Você é um extrator de provas da OAB.
+O texto abaixo é o caderno COMPLETO de questões. Extraia SOMENTE as questões numeradas de ${from} a ${to}.
 
 Retorne APENAS um array JSON válido, sem markdown, sem texto extra.
 
 Formato de cada questão:
 {
-  "numero_questao": 1,
+  "numero_questao": ${from},
   "enunciado": "texto completo do enunciado e caso hipotético",
   "alternativa_a": "texto da alternativa A (sem o prefixo 'A)')",
   "alternativa_b": "texto da alternativa B",
@@ -88,13 +89,15 @@ Formato de cada questão:
 }
 
 Regras:
-- Extraia SOMENTE as questões que aparecem COMPLETAS neste trecho (enunciado + 4 alternativas)
+- Extraia SOMENTE as questões de número ${from} a ${to} — ignore tudo fora desse intervalo
+- Inclua uma questão apenas se ela estiver completa (enunciado + 4 alternativas)
 - area_direito: exatamente uma de: civil, const, penal, trabalho, adm, etica, trib, outros
 - dificuldade: baixa, media ou alta
 - legislacao_ref: artigo e diploma mais relevante, null se não houver
 - NÃO inclua gabarito nem explicacao — serão preenchidos separadamente
 - NÃO invente alternativas — preserve o texto exato do PDF
-- Se o trecho não contiver questões completas, retorne []`;
+- Se nenhuma questão do intervalo estiver completa, retorne []`;
+}
 
 // POST /api/admin/import-pdf — recebe PDFs, inicia job em background, retorna job_id imediatamente
 // O Cloudflare free tem timeout de 99s; processamento assíncrono evita o corte.
@@ -150,19 +153,14 @@ router.post('/import-pdf', requireAdmin, (req, res, next) => {
   const comGabarito = Object.keys(mapaGabarito).length;
   console.log(`[import-pdf] Gabarito: ${comGabarito} questões. Edição detectada: ${edicao || '?'} (${ano || '?'})`);
 
-  // Chunks de 20k chars → ~10-14 questões por lote.
-  // Com o novo prompt (sem explicacao/gabarito) cada questão ocupa ~120 tokens de saída,
-  // então 14 questões = ~1.700 tokens — muito abaixo do max_tokens=16k.
-  const CHUNK_SIZE = 20000;
-  const chunks = [];
-  for (let i = 0; i < textoCaderno.length; i += CHUNK_SIZE) {
-    chunks.push(textoCaderno.slice(i, i + CHUNK_SIZE));
-  }
+  // 4 chamadas fixas por intervalo de questão — o modelo busca pelo número,
+  // eliminando o problema de questões cortadas na borda de chunks de texto.
+  const RANGES = [[1, 20], [21, 40], [41, 60], [61, 80]];
 
   // Cria job e retorna imediatamente — processamento acontece em background
   const jobId = crypto.randomUUID();
   jobs.set(jobId, { status: 'processing', questoes: null, erro: null, criadoEm: Date.now() });
-  console.log(`[import-pdf] Job ${jobId} — ${chunks.length} lotes de até ${CHUNK_SIZE} chars`);
+  console.log(`[import-pdf] Job ${jobId} — 4 lotes por intervalo (Q1-20, Q21-40, Q41-60, Q61-80)`);
   res.json({ jobId, status: 'processing' });
 
   // Tenta recuperar JSON mesmo quando a resposta foi truncada por max_tokens
@@ -185,34 +183,31 @@ router.post('/import-pdf', requireAdmin, (req, res, next) => {
       const client = makeClient();
       const todasQuestoes = [];
 
-      for (let i = 0; i < chunks.length; i++) {
-        const conteudo = chunks.length === 1
-          ? `Texto do caderno de questões:\n\n${chunks[i]}`
-          : `Texto do caderno (parte ${i + 1} de ${chunks.length}):\n\n${chunks[i]}`;
-
-        console.log(`[import-pdf] Job ${jobId} — lote ${i + 1}/${chunks.length} (${conteudo.length} chars)`);
+      for (const [from, to] of RANGES) {
+        const prompt = `${makeRangePrompt(from, to)}\n\nTexto completo do caderno:\n\n${textoCaderno}`;
+        console.log(`[import-pdf] Job ${jobId} — lote Q${from}-Q${to} (${prompt.length} chars total)`);
 
         const response = await client.messages.create({
           model: DEEPSEEK_MODEL,
-          max_tokens: 8000,
-          messages: [{ role: 'user', content: `${PROMPT_EXTRACAO}\n\n${conteudo}` }],
+          max_tokens: 10000,
+          messages: [{ role: 'user', content: prompt }],
         });
 
-        console.log(`[import-pdf] Job ${jobId} lote ${i + 1} — stop_reason: ${response.stop_reason}, tokens: ${JSON.stringify(response.usage)}`);
+        console.log(`[import-pdf] Job ${jobId} Q${from}-Q${to} — stop_reason: ${response.stop_reason}, tokens: ${JSON.stringify(response.usage)}`);
 
         const raw = response.content[0]?.text || '';
         const questoes = extrairQuestoes(raw);
 
         if (!questoes || questoes.length === 0) {
-          console.warn(`[import-pdf] Job ${jobId} lote ${i + 1} — sem questões extraídas`);
+          console.warn(`[import-pdf] Job ${jobId} Q${from}-Q${to} — sem questões extraídas`);
           continue;
         }
 
         if (response.stop_reason === 'max_tokens') {
-          console.warn(`[import-pdf] Job ${jobId} lote ${i + 1} — ATENÇÃO: resposta truncada`);
+          console.warn(`[import-pdf] Job ${jobId} Q${from}-Q${to} — ATENÇÃO: resposta truncada`);
         }
 
-        console.log(`[import-pdf] Job ${jobId} lote ${i + 1} — ${questoes.length} questões`);
+        console.log(`[import-pdf] Job ${jobId} Q${from}-Q${to} — ${questoes.length} questões`);
         todasQuestoes.push(...questoes);
       }
 
@@ -221,7 +216,7 @@ router.post('/import-pdf', requireAdmin, (req, res, next) => {
         return;
       }
 
-      // Remove duplicatas (mesma questão pode aparecer em dois chunks sobrepostos)
+      // Remove duplicatas por numero_questao (não deve ocorrer com ranges exclusivos, mas por segurança)
       const vistas = new Set();
       const semDup = todasQuestoes.filter(q => {
         const k = q.numero_questao;
