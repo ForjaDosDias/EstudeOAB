@@ -31,48 +31,70 @@ function makeClient() {
   });
 }
 
-const PROMPT_SISTEMA = `Você é um especialista em provas da OAB (Ordem dos Advogados do Brasil).
-Você receberá o texto extraído de 1 ou 2 PDFs: o caderno de questões e/ou o gabarito oficial.
+// Parseia o gabarito oficial de forma determinística — sem LLM.
+// Reconhece o padrão em duas linhas da FGV:
+//   "1 2 3 ... 20\nC D C ... A"
+function parseGabarito(texto) {
+  if (!texto) return {};
+  const mapa = {};
+  const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
+  for (let i = 0; i < linhas.length - 1; i++) {
+    const nums = linhas[i].match(/\b(\d{1,2})\b/g);
+    if (!nums || nums.length < 5) continue;
+    const letras = linhas[i + 1].match(/\b([ABCD])\b/g);
+    if (!letras || letras.length !== nums.length) continue;
+    nums.forEach((n, j) => { mapa[parseInt(n)] = letras[j]; });
+    i++;
+  }
+  return mapa;
+}
 
-Sua tarefa:
-1. Se receber APENAS o caderno de questões: extraia todas as questões. Use gabarito: null quando não disponível.
-2. Se receber APENAS o gabarito: isso não é suficiente. Retorne [].
-3. Se receber AMBOS (caderno + gabarito): extraia as questões e preencha o gabarito cruzando pelo número da questão.
+// Extrai número e ano do exame a partir do texto do gabarito ou caderno.
+function detectarExame(texto) {
+  const numMatch = texto.match(/(\d{1,2})º\s+EXAME/i);
+  const anoMatch = texto.match(/\b(20\d{2})\b/);
+  const num = numMatch ? parseInt(numMatch[1]) : null;
+  return { edicao: num ? toRomano(num) : null, ano: anoMatch ? parseInt(anoMatch[1]) : null };
+}
 
-Como identificar cada documento:
-- Caderno de questões: contém enunciados longos, alternativas A/B/C/D, situações hipotéticas.
-- Gabarito: contém uma tabela simples com número da questão e letra (ex: "01 - B", "02 - A").
+function toRomano(n) {
+  const vals = [1000,900,500,400,100,90,50,40,10,9,5,4,1];
+  const syms = ['M','CM','D','CD','C','XC','L','XL','X','IX','V','IV','I'];
+  let r = '';
+  for (let i = 0; i < vals.length; i++) while (n >= vals[i]) { r += syms[i]; n -= vals[i]; }
+  return r;
+}
 
-Retorne APENAS um array JSON válido, sem markdown, sem explicações.
+// Prompt focado apenas em estrutura — sem gabarito, sem explicação.
+// Reduz o output de ~400 tokens/questão para ~120 tokens/questão,
+// permitindo extrair 80 questões sem estourar max_tokens.
+const PROMPT_EXTRACAO = `Você é um extrator de provas da OAB.
+Receberá um trecho de texto de um caderno de questões. Extraia SOMENTE as questões presentes neste trecho.
+
+Retorne APENAS um array JSON válido, sem markdown, sem texto extra.
 
 Formato de cada questão:
 {
-  "id": "XLI-Q001",
-  "banca": "FGV",
-  "edicao": "XLI",
-  "ano": 2024,
   "numero_questao": 1,
-  "enunciado": "texto completo do enunciado",
-  "alternativa_a": "texto da alternativa A",
+  "enunciado": "texto completo do enunciado e caso hipotético",
+  "alternativa_a": "texto da alternativa A (sem o prefixo 'A)')",
   "alternativa_b": "texto da alternativa B",
   "alternativa_c": "texto da alternativa C",
   "alternativa_d": "texto da alternativa D",
-  "gabarito": "B",
-  "area_direito": "civil",
-  "materia": "Responsabilidade Civil",
+  "area_direito": "etica",
+  "materia": "Publicidade do Advogado",
   "dificuldade": "media",
-  "legislacao_ref": "Art. 186 · CC/2002",
-  "explicacao": "Explicação didática de por que a alternativa correta está certa e as outras estão erradas."
+  "legislacao_ref": "Art. 39, RGOAB/OAB (2015)"
 }
 
 Regras:
-- id: sempre no formato {EDICAO}-Q{numero com 3 dígitos}, ex: XLI-Q001
-- area_direito: exatamente uma de: civil, const, penal, trabalho, adm, etica, trib
-- dificuldade: baixa, media ou alta (estime pela complexidade)
-- gabarito: A, B, C ou D — preencha a partir do gabarito oficial se disponível, senão null
-- legislacao_ref: artigo e diploma legal mais relevante (ex: "Art. 5º, X · CF/88"). Use null se não houver.
-- explicacao: explique por que o gabarito está correto e por que as outras alternativas estão erradas. Use null se o gabarito for null.
-- Não invente alternativas. Preserve o texto exatamente como está no PDF`;
+- Extraia SOMENTE as questões que aparecem COMPLETAS neste trecho (enunciado + 4 alternativas)
+- area_direito: exatamente uma de: civil, const, penal, trabalho, adm, etica, trib, outros
+- dificuldade: baixa, media ou alta
+- legislacao_ref: artigo e diploma mais relevante, null se não houver
+- NÃO inclua gabarito nem explicacao — serão preenchidos separadamente
+- NÃO invente alternativas — preserve o texto exato do PDF
+- Se o trecho não contiver questões completas, retorne []`;
 
 // POST /api/admin/import-pdf — recebe PDFs, inicia job em background, retorna job_id imediatamente
 // O Cloudflare free tem timeout de 99s; processamento assíncrono evita o corte.
@@ -108,42 +130,53 @@ router.post('/import-pdf', requireAdmin, (req, res, next) => {
     }
   }
 
-  // Cria job e retorna imediatamente — processamento acontece em background
-  const jobId = crypto.randomUUID();
-  jobs.set(jobId, { status: 'processing', questoes: null, erro: null, criadoEm: Date.now() });
+  // Identifica caderno e gabarito pela heurística de tamanho:
+  // caderno tem centenas de KB de texto; gabarito tem poucos KB
+  const [arqA, arqB] = textos;
+  let textoCaderno, textoGabarito;
+  if (!arqB) {
+    textoCaderno  = arqA.texto;
+    textoGabarito = null;
+  } else {
+    // Maior = caderno; menor = gabarito
+    [textoCaderno, textoGabarito] = arqA.texto.length >= arqB.texto.length
+      ? [arqA.texto, arqB.texto]
+      : [arqB.texto, arqA.texto];
+  }
 
-  // Separa texto do caderno e do gabarito
-  const textoCaderno  = textos[0].texto;
-  const textoGabarito = textos[1]?.texto || null;
+  // Gabarito parseado deterministicamente — não depende de tokens de saída do LLM
+  const mapaGabarito = parseGabarito(textoGabarito || '');
+  const { edicao, ano } = detectarExame(textoGabarito || textoCaderno);
+  const comGabarito = Object.keys(mapaGabarito).length;
+  console.log(`[import-pdf] Gabarito: ${comGabarito} questões. Edição detectada: ${edicao || '?'} (${ano || '?'})`);
 
-  // Divide o caderno em lotes de ~40.000 chars (~10k tokens de entrada)
-  // para garantir que a resposta caiba dentro dos 16k tokens de saída
-  const CHUNK_SIZE = 40000;
+  // Chunks de 20k chars → ~10-14 questões por lote.
+  // Com o novo prompt (sem explicacao/gabarito) cada questão ocupa ~120 tokens de saída,
+  // então 14 questões = ~1.700 tokens — muito abaixo do max_tokens=16k.
+  const CHUNK_SIZE = 20000;
   const chunks = [];
   for (let i = 0; i < textoCaderno.length; i += CHUNK_SIZE) {
     chunks.push(textoCaderno.slice(i, i + CHUNK_SIZE));
   }
-  console.log(`[import-pdf] Job ${jobId} — ${chunks.length} lote(s) de até ${CHUNK_SIZE} chars. Gabarito: ${textoGabarito ? 'sim' : 'não'}`);
+
+  // Cria job e retorna imediatamente — processamento acontece em background
+  const jobId = crypto.randomUUID();
+  jobs.set(jobId, { status: 'processing', questoes: null, erro: null, criadoEm: Date.now() });
+  console.log(`[import-pdf] Job ${jobId} — ${chunks.length} lotes de até ${CHUNK_SIZE} chars`);
   res.json({ jobId, status: 'processing' });
 
   // Tenta recuperar JSON mesmo quando a resposta foi truncada por max_tokens
   function extrairQuestoes(raw) {
-    // Tenta match completo primeiro
     const completo = raw.match(/\[[\s\S]*\]/);
     if (completo) {
       try { return JSON.parse(completo[0]); } catch { /* cai para recuperação */ }
     }
-    // Resposta truncada: acha o último objeto completo e fecha o array
     const abreArray = raw.indexOf('[');
     if (abreArray === -1) return null;
     const trecho = raw.slice(abreArray);
     const ultimoFecha = trecho.lastIndexOf('},');
     if (ultimoFecha === -1) return null;
-    try {
-      return JSON.parse(trecho.slice(0, ultimoFecha + 1) + ']');
-    } catch {
-      return null;
-    }
+    try { return JSON.parse(trecho.slice(0, ultimoFecha + 1) + ']'); } catch { return null; }
   }
 
   // Processa em background
@@ -153,19 +186,16 @@ router.post('/import-pdf', requireAdmin, (req, res, next) => {
       const todasQuestoes = [];
 
       for (let i = 0; i < chunks.length; i++) {
-        const sufixo = textoGabarito
-          ? `\n\n--- GABARITO OFICIAL ---\n\n${textoGabarito}`
-          : '';
         const conteudo = chunks.length === 1
-          ? `Texto do PDF:\n\n${chunks[i]}${sufixo}`
-          : `Texto do PDF (parte ${i + 1} de ${chunks.length}):\n\n${chunks[i]}${sufixo}`;
+          ? `Texto do caderno de questões:\n\n${chunks[i]}`
+          : `Texto do caderno (parte ${i + 1} de ${chunks.length}):\n\n${chunks[i]}`;
 
         console.log(`[import-pdf] Job ${jobId} — lote ${i + 1}/${chunks.length} (${conteudo.length} chars)`);
 
         const response = await client.messages.create({
           model: DEEPSEEK_MODEL,
-          max_tokens: 16000,
-          messages: [{ role: 'user', content: `${PROMPT_SISTEMA}\n\n${conteudo}` }],
+          max_tokens: 8000,
+          messages: [{ role: 'user', content: `${PROMPT_EXTRACAO}\n\n${conteudo}` }],
         });
 
         console.log(`[import-pdf] Job ${jobId} lote ${i + 1} — stop_reason: ${response.stop_reason}, tokens: ${JSON.stringify(response.usage)}`);
@@ -178,12 +208,12 @@ router.post('/import-pdf', requireAdmin, (req, res, next) => {
           continue;
         }
 
-        console.log(`[import-pdf] Job ${jobId} lote ${i + 1} — ${questoes.length} questões extraídas`);
-        todasQuestoes.push(...questoes);
-
         if (response.stop_reason === 'max_tokens') {
-          console.warn(`[import-pdf] Job ${jobId} lote ${i + 1} — resposta truncada, ${questoes.length} questões recuperadas parcialmente`);
+          console.warn(`[import-pdf] Job ${jobId} lote ${i + 1} — ATENÇÃO: resposta truncada`);
         }
+
+        console.log(`[import-pdf] Job ${jobId} lote ${i + 1} — ${questoes.length} questões`);
+        todasQuestoes.push(...questoes);
       }
 
       if (todasQuestoes.length === 0) {
@@ -191,9 +221,34 @@ router.post('/import-pdf', requireAdmin, (req, res, next) => {
         return;
       }
 
-      const comGabarito = todasQuestoes.filter(q => q.gabarito).length;
-      console.log(`[import-pdf] Job ${jobId} — concluído: ${todasQuestoes.length} questões, ${comGabarito} com gabarito`);
-      jobs.set(jobId, { status: 'done', questoes: todasQuestoes, comGabarito, total: todasQuestoes.length });
+      // Remove duplicatas (mesma questão pode aparecer em dois chunks sobrepostos)
+      const vistas = new Set();
+      const semDup = todasQuestoes.filter(q => {
+        const k = q.numero_questao;
+        if (!k || vistas.has(k)) return false;
+        vistas.add(k);
+        return true;
+      });
+      semDup.sort((a, b) => (a.numero_questao || 0) - (b.numero_questao || 0));
+
+      // Mescla gabarito determinístico + metadados detectados
+      const questoesFinal = semDup.map(q => {
+        const num = q.numero_questao;
+        const padded = String(num).padStart(3, '0');
+        return {
+          ...q,
+          id:       edicao ? `${edicao}-Q${padded}` : null,
+          banca:    'FGV',
+          edicao:   edicao  || null,
+          ano:      ano     || null,
+          gabarito: mapaGabarito[num] || null,
+          explicacao: null,
+        };
+      });
+
+      const totalGabarito = questoesFinal.filter(q => q.gabarito).length;
+      console.log(`[import-pdf] Job ${jobId} — concluído: ${questoesFinal.length} questões, ${totalGabarito} com gabarito`);
+      jobs.set(jobId, { status: 'done', questoes: questoesFinal, comGabarito: totalGabarito, total: questoesFinal.length });
     } catch (err) {
       console.error(`[import-pdf] Job ${jobId} — erro na IA:`, err.message);
       jobs.set(jobId, { status: 'error', erro: `Erro ao processar com IA: ${err.message}` });
