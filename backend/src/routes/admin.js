@@ -225,7 +225,7 @@ router.post('/import-pdf', requireAdmin, (req, res, next) => {
         for (const { prompt, tag } of tentativas) {
           const response = await client.messages.create({
             model: DEEPSEEK_MODEL,
-            max_tokens: 10000,
+            max_tokens: 14000,
             messages: [{ role: 'user', content: prompt }],
           });
 
