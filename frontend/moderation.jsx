@@ -254,7 +254,7 @@ function EditorFullScreen({ report: r, readOnly, onClose, onResolvido, onRecarre
           </div>
         </div>
         {modoEdicao && !readOnly && (
-          <div style={{display:'flex', gap:8'}}>
+          <div style={{display:'flex', gap:8}}>
             <button className="btn btn-quiet" disabled={resolvendo} onClick={apenasResolver}>
               {resolvendo ? 'Resolvendo…' : 'Resolver sem editar'}
             </button>
