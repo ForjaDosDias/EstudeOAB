@@ -35,15 +35,22 @@ services:
 
   frontend:
     image: nginx:1.27-alpine
+    container_name: estude-nginx
     restart: unless-stopped
     volumes:
       - ./frontend:/usr/share/nginx/html:ro
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    ports:
-      - "80:80"     # HTTP — Cloudflare bate aqui
-      - "443:443"   # HTTPS — para certificado SSL futuro
+    expose:
+      - "80"
     depends_on:
       - backend
+    networks:
+      - default    # rede interna compartilhada com backend/db
+      - vps-proxy  # rede externa para o nginx-proxy rotear
 
 volumes:
   postgres_data:
+
+networks:
+  vps-proxy:
+    external: true
