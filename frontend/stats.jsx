@@ -298,6 +298,8 @@ function ReviewModal({ answer, onClose, commentCache, setCommentCache }) {
   const [comentariosAbertos,  setComentariosAbertos]  = useStateStats(false);
   const [comentarios,         setComentarios]         = useStateStats([]);
   const [loadingComentarios,  setLoadingComentarios]  = useStateStats(false);
+  const [novoComentario,      setNovoComentario]      = useStateStats('');
+  const [enviandoComentario,  setEnviandoComentario]  = useStateStats(false);
 
   const abrirComentarios = async () => {
     if (comentariosAbertos) { setComentariosAbertos(false); return; }
@@ -316,6 +318,25 @@ function ReviewModal({ answer, onClose, commentCache, setCommentCache }) {
       setComentarios(lista);
     } catch { setComentarios([]); }
     finally { setLoadingComentarios(false); }
+  };
+
+  const enviarComentario = async () => {
+    if (!novoComentario.trim()) return;
+    setEnviandoComentario(true);
+    try {
+      const novo = await window.apiFetch(`/question-comments/${answer.question_id}`, {
+        method: 'POST',
+        body: JSON.stringify({ corpo: novoComentario.trim() }),
+      });
+      const lista = [...comentarios, novo];
+      setComentarios(lista);
+      if (setCommentCache) setCommentCache(m => { const nm = new Map(m); nm.set(answer.question_id, lista); return nm; });
+      setNovoComentario('');
+    } catch (err) {
+      alert(err.error || 'Erro ao enviar comentário');
+    } finally {
+      setEnviandoComentario(false);
+    }
   };
 
   const opcoes = [
@@ -385,16 +406,35 @@ function ReviewModal({ answer, onClose, commentCache, setCommentCache }) {
                 <div style={{color:'var(--text-muted)', fontSize:'var(--text-sm)'}}>Carregando…</div>
               )}
               {!loadingComentarios && comentarios.length === 0 && (
-                <div style={{color:'var(--text-muted)', fontSize:'var(--text-sm)'}}>Nenhum comentário para esta questão ainda.</div>
+                <div style={{color:'var(--text-muted)', fontSize:'var(--text-sm)', marginBottom:10}}>Nenhum comentário ainda. Seja o primeiro!</div>
               )}
               {!loadingComentarios && comentarios.map(c => (
                 <div key={c.id} style={{borderTop:'1px solid var(--border)', paddingTop:10, marginTop:10}}>
                   <div style={{fontSize:11, color:'var(--text-muted)', marginBottom:4}}>
-                    {c.admin_nome || 'Admin'} · {new Date(c.criado_em).toLocaleDateString('pt-BR')}
+                    {c.autor_nome || 'Usuário'} · {new Date(c.criado_em).toLocaleDateString('pt-BR')}
                   </div>
                   <div style={{fontSize:'var(--text-sm)'}}>{c.corpo}</div>
                 </div>
               ))}
+              {!loadingComentarios && (
+                <div style={{display:'flex', gap:8, marginTop:12, borderTop:'1px solid var(--border)', paddingTop:12}}>
+                  <textarea
+                    className="input-field"
+                    rows={2}
+                    placeholder="Adicionar comentário…"
+                    value={novoComentario}
+                    onChange={e => setNovoComentario(e.target.value)}
+                    style={{flex:1, resize:'vertical', fontFamily:'inherit', fontSize:'var(--text-sm)'}}
+                    disabled={enviandoComentario}
+                  />
+                  <button className="btn btn-primary btn-sm"
+                          onClick={enviarComentario}
+                          disabled={!novoComentario.trim() || enviandoComentario}
+                          style={{alignSelf:'flex-end'}}>
+                    {enviandoComentario ? '…' : 'Comentar'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

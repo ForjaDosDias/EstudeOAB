@@ -512,7 +512,7 @@ function QuestaoModal({ questao, titulo, onSave, onClose }) {
               }}>
                 <div>
                   <div style={{fontSize:11, color:'var(--text-muted)', marginBottom:4}}>
-                    {c.admin_nome || 'Admin'} · {new Date(c.criado_em).toLocaleDateString('pt-BR', {day:'2-digit', month:'short', year:'numeric'})}
+                    {c.autor_nome || 'Usuário'} · {new Date(c.criado_em).toLocaleDateString('pt-BR', {day:'2-digit', month:'short', year:'numeric'})}
                   </div>
                   <div style={{fontSize:'var(--text-sm)'}}>{c.corpo}</div>
                 </div>

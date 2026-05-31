@@ -174,10 +174,12 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
   const [comentariosAbertos,  setComentariosAbertos]  = useStatePractice(false);
   const [comentarios,         setComentarios]         = useStatePractice([]);
   const [loadingComentarios,  setLoadingComentarios]  = useStatePractice(false);
+  const [novoComentario,      setNovoComentario]      = useStatePractice('');
+  const [enviandoComentario,  setEnviandoComentario]  = useStatePractice(false);
 
   useEffectPractice(() => {
     setEscolhida(null); setConfirmada(false); setConfirmando(false); setFeedbackAPI(null); setTempo(0);
-    setComentariosAbertos(false); setComentarios([]);
+    setComentariosAbertos(false); setComentarios([]); setNovoComentario('');
   }, [session.idx]);
 
   useEffectPractice(() => {
@@ -210,6 +212,25 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
   const avancar = () => {
     if (session.idx + 1 >= total) onFinish();
     else setSession(s => ({ ...s, idx: s.idx + 1 }));
+  };
+
+  const enviarComentario = async () => {
+    if (!novoComentario.trim()) return;
+    setEnviandoComentario(true);
+    try {
+      const novo = await window.apiFetch(`/question-comments/${q.id}`, {
+        method: 'POST',
+        body: JSON.stringify({ corpo: novoComentario.trim() }),
+      });
+      const lista = [...comentarios, novo];
+      setComentarios(lista);
+      setCommentCache(m => { const nm = new Map(m); nm.set(q.id, lista); return nm; });
+      setNovoComentario('');
+    } catch (err) {
+      alert(err.error || 'Erro ao enviar comentário');
+    } finally {
+      setEnviandoComentario(false);
+    }
   };
 
   const abrirComentarios = async () => {
@@ -326,16 +347,35 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
                       <span style={{color:'var(--text-muted)', fontSize:'var(--text-sm)'}}>Carregando…</span>
                     )}
                     {!loadingComentarios && comentarios.length === 0 && (
-                      <div style={{color:'var(--text-muted)', fontSize:'var(--text-sm)'}}>Nenhum comentário para esta questão ainda.</div>
+                      <div style={{color:'var(--text-muted)', fontSize:'var(--text-sm)', marginBottom:10}}>Nenhum comentário ainda. Seja o primeiro!</div>
                     )}
                     {!loadingComentarios && comentarios.map(c => (
                       <div key={c.id} style={{borderTop:'1px solid rgba(255,255,255,0.12)', paddingTop:10, marginTop:10}}>
                         <div style={{fontSize:11, color:'var(--text-muted)', marginBottom:4}}>
-                          {c.admin_nome || 'Admin'} · {new Date(c.criado_em).toLocaleDateString('pt-BR')}
+                          {c.autor_nome || 'Usuário'} · {new Date(c.criado_em).toLocaleDateString('pt-BR')}
                         </div>
                         <div style={{fontSize:'var(--text-sm)'}}>{c.corpo}</div>
                       </div>
                     ))}
+                    {!loadingComentarios && (
+                      <div style={{display:'flex', gap:8, marginTop:12, borderTop:'1px solid rgba(255,255,255,0.12)', paddingTop:12}}>
+                        <textarea
+                          className="input-field"
+                          rows={2}
+                          placeholder="Adicionar comentário…"
+                          value={novoComentario}
+                          onChange={e => setNovoComentario(e.target.value)}
+                          style={{flex:1, resize:'vertical', fontFamily:'inherit', fontSize:'var(--text-sm)'}}
+                          disabled={enviandoComentario}
+                        />
+                        <button className="btn btn-primary btn-sm"
+                                onClick={enviarComentario}
+                                disabled={!novoComentario.trim() || enviandoComentario}
+                                style={{alignSelf:'flex-end'}}>
+                          {enviandoComentario ? '…' : 'Comentar'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

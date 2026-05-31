@@ -22,7 +22,7 @@ const fakeComment = {
   id: 1,
   corpo: 'Atenção ao art. 186 do CC — prazo de 3 anos.',
   criado_em: new Date().toISOString(),
-  admin_nome: 'Admin OAB',
+  autor_nome: 'Admin OAB',
 };
 
 // ── GET /:questionId ──────────────────────────────────────────────────────────
@@ -41,7 +41,7 @@ describe('GET /api/question-comments/:questionId', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.comments)).toBe(true);
     expect(res.body.comments[0].id).toBe(1);
-    expect(res.body.comments[0].admin_nome).toBe('Admin OAB');
+    expect(res.body.comments[0].autor_nome).toBe('Admin OAB');
   });
 
   it('200 retorna array vazio quando não há comentários', async () => {
@@ -62,14 +62,6 @@ describe('POST /api/question-comments/:questionId', () => {
     expect(res.status).toBe(401);
   });
 
-  it('403 para usuário comum', async () => {
-    const res = await request(app)
-      .post('/api/question-comments/1')
-      .set('Authorization', `Bearer ${userToken()}`)
-      .send({ corpo: 'texto' });
-    expect(res.status).toBe(403);
-  });
-
   it('400 sem campo corpo', async () => {
     const res = await request(app)
       .post('/api/question-comments/1')
@@ -87,10 +79,10 @@ describe('POST /api/question-comments/:questionId', () => {
     expect(res.status).toBe(404);
   });
 
-  it('201 cria comentário com sucesso', async () => {
+  it('201 admin cria comentário com sucesso', async () => {
     pool.query
-      .mockResolvedValueOnce({ rows: [{ id: 1 }] })     // SELECT questions (existe)
-      .mockResolvedValueOnce({ rows: [fakeComment] });   // INSERT RETURNING
+      .mockResolvedValueOnce({ rows: [{ id: 1 }] })
+      .mockResolvedValueOnce({ rows: [fakeComment] });
     const res = await request(app)
       .post('/api/question-comments/1')
       .set('Authorization', `Bearer ${adminToken()}`)
@@ -98,6 +90,18 @@ describe('POST /api/question-comments/:questionId', () => {
     expect(res.status).toBe(201);
     expect(res.body.id).toBe(1);
     expect(res.body.corpo).toBeDefined();
+  });
+
+  it('201 usuário comum também pode comentar', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ id: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ ...fakeComment, autor_nome: 'Aluno' }] });
+    const res = await request(app)
+      .post('/api/question-comments/1')
+      .set('Authorization', `Bearer ${userToken()}`)
+      .send({ corpo: 'Tenho dúvida nessa questão.' });
+    expect(res.status).toBe(201);
+    expect(res.body.autor_nome).toBe('Aluno');
   });
 });
 

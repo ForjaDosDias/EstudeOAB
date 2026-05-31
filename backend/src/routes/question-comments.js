@@ -12,7 +12,7 @@ router.get('/:questionId', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT qc.id, qc.corpo, qc.criado_em,
-              u.nome AS admin_nome
+              u.nome AS autor_nome
        FROM question_comments qc
        LEFT JOIN users u ON u.id = qc.admin_id
        WHERE qc.question_id = $1
@@ -26,11 +26,11 @@ router.get('/:questionId', requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/question-comments/:questionId — apenas admins
-router.post('/:questionId', requireAdmin, async (req, res) => {
+// POST /api/question-comments/:questionId — qualquer usuário autenticado
+router.post('/:questionId', requireAuth, async (req, res) => {
   const questionId = parseInt(req.params.questionId);
   const { corpo } = req.body;
-  const adminId = req.user.userId;
+  const authorId = req.user.userId;
 
   if (!questionId) return res.status(400).json({ error: 'questionId inválido' });
   if (!corpo?.trim()) return res.status(400).json({ error: 'corpo é obrigatório' });
@@ -42,8 +42,9 @@ router.post('/:questionId', requireAdmin, async (req, res) => {
     const result = await pool.query(
       `INSERT INTO question_comments (question_id, admin_id, corpo)
        VALUES ($1, $2, $3)
-       RETURNING id, corpo, criado_em`,
-      [questionId, adminId, corpo.trim()]
+       RETURNING id, corpo, criado_em,
+         (SELECT nome FROM users WHERE id = $2) AS autor_nome`,
+      [questionId, authorId, corpo.trim()]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
