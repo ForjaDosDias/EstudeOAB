@@ -74,7 +74,7 @@ router.post('/register', async (req, res) => {
       (err) => console.error('send verification email error:', err.message)
     );
 
-    res.status(201).json({ token: makeToken(user), user: publicUser(user) });
+    res.status(201).json({ requiresVerification: true, email: user.email });
   } catch (err) {
     if (err.code === '23505') {
       return res.status(409).json({ error: 'Este email já está cadastrado' });

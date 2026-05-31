@@ -60,7 +60,7 @@ describe('POST /api/auth/register', () => {
     expect(res.body.error).toMatch(/email inválido/i);
   });
 
-  it('201 com token e usuário quando dados válidos', async () => {
+  it('201 retorna requiresVerification e email quando dados válidos', async () => {
     bcrypt.hash.mockResolvedValue('$hashed$');
     pool.query
       .mockResolvedValueOnce({ rows: [fakeUser] })
@@ -73,9 +73,9 @@ describe('POST /api/auth/register', () => {
     });
 
     expect(res.status).toBe(201);
-    expect(res.body.token).toBeDefined();
-    expect(res.body.user.email).toBe('teste@oab.com');
-    expect(res.body.user.password_hash).toBeUndefined();
+    expect(res.body.requiresVerification).toBe(true);
+    expect(res.body.email).toBe('teste@oab.com');
+    expect(res.body.token).toBeUndefined();
   });
 
   it('409 quando email já existe (conflito único)', async () => {

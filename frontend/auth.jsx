@@ -618,7 +618,7 @@ const REGISTER_STEPS = [
   { id: 'pronto',     label: 'Pronto' },
 ];
 
-function RegisterFlow({ onCancel, onComplete }) {
+function RegisterFlow({ onCancel, onComplete, onEmailPending }) {
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({
     nome: '', email: '', senha: '',
@@ -659,6 +659,7 @@ function RegisterFlow({ onCancel, onComplete }) {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Erro ao criar conta');
+        if (data.requiresVerification) { onEmailPending(data.email); return; }
         onComplete(data.user, data.token);
       } catch (err) {
         setError(err.message);

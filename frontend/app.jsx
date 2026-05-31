@@ -160,6 +160,7 @@ function App() {
       <window.AuthFlow.RegisterFlow
         onCancel={() => setRoute('splash')}
         onComplete={handleRegisterComplete}
+        onEmailPending={(email) => { setEmailPending({ email, tokenExpired: false }); setRoute('email-pending'); }}
       />
     );
   }
