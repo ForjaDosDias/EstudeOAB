@@ -402,6 +402,47 @@ function QuestaoModal({ questao, titulo, onSave, onClose }) {
   const [form, setForm] = useStateAdmin({ ...questao });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
+  const [comentarios,        setComentarios]        = useStateAdmin([]);
+  const [loadingComents,     setLoadingComents]     = useStateAdmin(false);
+  const [novoComentario,     setNovoComentario]     = useStateAdmin('');
+  const [salvandoComentario, setSalvandoComentario] = useStateAdmin(false);
+
+  useEffectAdmin(() => {
+    if (!questao?.id) return;
+    setLoadingComents(true);
+    adminFetch(`/question-comments/${questao.id}`)
+      .then(d => setComentarios(d.comments || []))
+      .catch(() => {})
+      .finally(() => setLoadingComents(false));
+  }, []);
+
+  const adicionarComentario = async () => {
+    if (!novoComentario.trim()) return;
+    setSalvandoComentario(true);
+    try {
+      const novo = await adminFetch(`/question-comments/${questao.id}`, {
+        method: 'POST',
+        body: JSON.stringify({ corpo: novoComentario.trim() }),
+      });
+      setComentarios(c => [...c, novo]);
+      setNovoComentario('');
+    } catch (err) {
+      alert(err.error || 'Erro ao adicionar comentário');
+    } finally {
+      setSalvandoComentario(false);
+    }
+  };
+
+  const deletarComentario = async (commentId) => {
+    if (!confirm('Deletar este comentário?')) return;
+    try {
+      await adminFetch(`/question-comments/${commentId}`, { method: 'DELETE' });
+      setComentarios(c => c.filter(x => x.id !== commentId));
+    } catch (err) {
+      alert(err.error || 'Erro ao deletar');
+    }
+  };
+
   return (
     <div className="modal-backdrop fade-in" onClick={onClose}>
       <div className="modal-panel fade-up" style={{maxWidth:760}} onClick={e => e.stopPropagation()}>
@@ -454,6 +495,49 @@ function QuestaoModal({ questao, titulo, onSave, onClose }) {
         <div style={{marginTop:12}}>
           <TextArea label="Explicação da resposta" value={form.explicacao || ''} onChange={v => set('explicacao', v)} rows={4} />
         </div>
+
+        {questao?.id && (
+          <div style={{marginTop:20, borderTop:'1px solid var(--border)', paddingTop:16}}>
+            <div className="input-label" style={{marginBottom:10}}>
+              Comentários de professor ({comentarios.length})
+            </div>
+            {loadingComents && <div style={{color:'var(--text-muted)', fontSize:'var(--text-sm)'}}>Carregando…</div>}
+            {!loadingComents && comentarios.length === 0 && (
+              <div style={{color:'var(--text-muted)', fontSize:'var(--text-sm)', marginBottom:8}}>Nenhum comentário ainda.</div>
+            )}
+            {!loadingComents && comentarios.map(c => (
+              <div key={c.id} style={{
+                display:'flex', justifyContent:'space-between', alignItems:'flex-start',
+                padding:'10px 12px', background:'var(--bege)', borderRadius:6, marginBottom:8,
+              }}>
+                <div>
+                  <div style={{fontSize:11, color:'var(--text-muted)', marginBottom:4}}>
+                    {c.admin_nome || 'Admin'} · {new Date(c.criado_em).toLocaleDateString('pt-BR', {day:'2-digit', month:'short', year:'numeric'})}
+                  </div>
+                  <div style={{fontSize:'var(--text-sm)'}}>{c.corpo}</div>
+                </div>
+                <button className="btn btn-quiet btn-sm" style={{color:'var(--bordo)', marginLeft:12, flexShrink:0}}
+                        onClick={() => deletarComentario(c.id)}>✕</button>
+              </div>
+            ))}
+            <div style={{display:'flex', gap:8, marginTop:8}}>
+              <textarea
+                className="input-field"
+                rows={2}
+                placeholder="Adicionar comentário de professor…"
+                value={novoComentario}
+                onChange={e => setNovoComentario(e.target.value)}
+                style={{flex:1, resize:'vertical', fontFamily:'inherit', fontSize:'var(--text-sm)'}}
+              />
+              <button className="btn btn-primary btn-sm"
+                      onClick={adicionarComentario}
+                      disabled={!novoComentario.trim() || salvandoComentario}
+                      style={{alignSelf:'flex-end'}}>
+                {salvandoComentario ? '…' : 'Adicionar'}
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="modal-actions" style={{marginTop:24}}>
           <button className="btn btn-quiet" onClick={onClose}>Cancelar</button>

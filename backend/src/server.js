@@ -10,6 +10,7 @@ const statsRouter         = require('./routes/stats');
 const adminRouter         = require('./routes/admin');
 // const reportsRouter       = require('./routes/reports'); // desativado
 const notificationsRouter = require('./routes/notifications');
+const questionCommentsRouter = require('./routes/question-comments');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -25,6 +26,7 @@ app.use('/api/stats',         statsRouter);
 app.use('/api/admin',         adminRouter);
 // app.use('/api/reports',       reportsRouter); // desativado
 app.use('/api/notifications', notificationsRouter);
+app.use('/api/question-comments', questionCommentsRouter);
 
 app.get('/api/health', async (req, res) => {
   try {

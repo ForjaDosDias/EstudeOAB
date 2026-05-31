@@ -14,6 +14,7 @@ function StatsPage({ onNavigate }) {
   const [filtroResultado, setFiltroResultado] = useStateStats('todos');
   const [filtroArea,      setFiltroArea]      = useStateStats('todas');
   const [reviewAnswer,    setReviewAnswer]    = useStateStats(null);
+  const [commentCache,    setCommentCache]    = useStateStats(new Map());
   const [loadingStats,    setLoadingStats]    = useStateStats(true);
   const [loadingHist,     setLoadingHist]     = useStateStats(true);
   const [erro,            setErro]            = useStateStats(null);
@@ -237,7 +238,14 @@ function StatsPage({ onNavigate }) {
         </div>
       </section>
 
-      {reviewAnswer && <ReviewModal answer={reviewAnswer} onClose={() => setReviewAnswer(null)} />}
+      {reviewAnswer && (
+        <ReviewModal
+          answer={reviewAnswer}
+          onClose={() => setReviewAnswer(null)}
+          commentCache={commentCache}
+          setCommentCache={setCommentCache}
+        />
+      )}
     </div>
   );
 }
@@ -282,10 +290,33 @@ function Donut({ acertos, erros, pendentes }) {
 }
 
 /* ---------- Review Modal ---------- */
-function ReviewModal({ answer, onClose }) {
+function ReviewModal({ answer, onClose, commentCache, setCommentCache }) {
   const { AREAS } = window.AppData;
   const area = AREAS[answer.area_direito] || { label: answer.area_direito || 'Área', icon: '⚖️', pillClass: 'area-pill-civil' };
   const acertou = answer.acertou;
+
+  const [comentariosAbertos,  setComentariosAbertos]  = useStateStats(false);
+  const [comentarios,         setComentarios]         = useStateStats([]);
+  const [loadingComentarios,  setLoadingComentarios]  = useStateStats(false);
+
+  const abrirComentarios = async () => {
+    if (comentariosAbertos) { setComentariosAbertos(false); return; }
+    const qId = answer.question_id;
+    if (commentCache && commentCache.has(qId)) {
+      setComentarios(commentCache.get(qId));
+      setComentariosAbertos(true);
+      return;
+    }
+    setLoadingComentarios(true);
+    setComentariosAbertos(true);
+    try {
+      const data = await window.apiFetch(`/question-comments/${qId}`);
+      const lista = data.comments || [];
+      if (setCommentCache) setCommentCache(m => { const nm = new Map(m); nm.set(qId, lista); return nm; });
+      setComentarios(lista);
+    } catch { setComentarios([]); }
+    finally { setLoadingComentarios(false); }
+  };
 
   const opcoes = [
     { letra: 'A', texto: answer.alternativa_a },
@@ -342,6 +373,30 @@ function ReviewModal({ answer, onClose }) {
               </div>
             </div>
           </div>
+        </div>
+
+        <div style={{marginTop:16}}>
+          <button className="btn btn-quiet btn-sm" onClick={abrirComentarios}>
+            {comentariosAbertos ? 'Fechar comentários' : `Comentários (${answer.comment_count ?? 0})`}
+          </button>
+          {comentariosAbertos && (
+            <div style={{marginTop:12}}>
+              {loadingComentarios && (
+                <div style={{color:'var(--text-muted)', fontSize:'var(--text-sm)'}}>Carregando…</div>
+              )}
+              {!loadingComentarios && comentarios.length === 0 && (
+                <div style={{color:'var(--text-muted)', fontSize:'var(--text-sm)'}}>Nenhum comentário para esta questão ainda.</div>
+              )}
+              {!loadingComentarios && comentarios.map(c => (
+                <div key={c.id} style={{borderTop:'1px solid var(--border)', paddingTop:10, marginTop:10}}>
+                  <div style={{fontSize:11, color:'var(--text-muted)', marginBottom:4}}>
+                    {c.admin_nome || 'Admin'} · {new Date(c.criado_em).toLocaleDateString('pt-BR')}
+                  </div>
+                  <div style={{fontSize:'var(--text-sm)'}}>{c.corpo}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="modal-actions">

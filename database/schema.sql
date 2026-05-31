@@ -156,6 +156,18 @@ CREATE TABLE IF NOT EXISTS question_edits (
 
 CREATE INDEX IF NOT EXISTS idx_question_edits_q ON question_edits(question_id);
 
+-- ── Comentários de professor por questão ─────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS question_comments (
+  id          SERIAL PRIMARY KEY,
+  question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+  admin_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  corpo       TEXT NOT NULL,
+  criado_em   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_qcomments_question ON question_comments(question_id);
+
 -- ── Verificação de e-mail e reset de senha ────────────────────────────────────
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;

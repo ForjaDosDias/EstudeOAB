@@ -91,7 +91,7 @@ router.get('/history', requireAuth, async (req, res) => {
       `SELECT a.id, a.escolhida, a.correta, a.acertou, a.tempo_s, a.respondida_em,
               q.id AS question_id, q.enunciado, q.banca, q.edicao, q.area_direito,
               q.gabarito, q.alternativa_a, q.alternativa_b, q.alternativa_c, q.alternativa_d,
-              q.legislacao_ref, q.explicacao
+              (SELECT COUNT(*)::int FROM question_comments WHERE question_id = q.id) AS comment_count
        FROM answers a
        JOIN questions q ON q.id = a.question_id
        ${where}

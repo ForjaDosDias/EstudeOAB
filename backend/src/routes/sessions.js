@@ -40,7 +40,7 @@ router.post('/', requireAuth, async (req, res) => {
     const questoesRes = await client.query(
       `SELECT id, enunciado, comando, alternativa_a, alternativa_b,
               alternativa_c, alternativa_d, area_direito, banca, edicao, dificuldade,
-              legislacao_ref, explicacao
+              (SELECT COUNT(*)::int FROM question_comments WHERE question_id = questions.id) AS comment_count
        FROM questions
        WHERE enunciado IS NOT NULL ${areaFilter}
        ORDER BY RANDOM()

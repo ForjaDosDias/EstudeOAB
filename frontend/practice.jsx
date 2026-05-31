@@ -165,13 +165,19 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
   const q = session.questoes[session.idx];
   const total = session.questoes.length;
 
-  const [escolhida,      setEscolhida]      = useStatePractice(null);
-  const [confirmada,     setConfirmada]     = useStatePractice(false);
-  const [confirmando,    setConfirmando]    = useStatePractice(false);
-  const [feedbackAPI,    setFeedbackAPI]    = useStatePractice(null);
-  const [tempo,          setTempo]          = useStatePractice(0);
+  const [escolhida,           setEscolhida]           = useStatePractice(null);
+  const [confirmada,          setConfirmada]          = useStatePractice(false);
+  const [confirmando,         setConfirmando]         = useStatePractice(false);
+  const [feedbackAPI,         setFeedbackAPI]         = useStatePractice(null);
+  const [tempo,               setTempo]               = useStatePractice(0);
+  const [commentCache,        setCommentCache]        = useStatePractice(new Map());
+  const [comentariosAbertos,  setComentariosAbertos]  = useStatePractice(false);
+  const [comentarios,         setComentarios]         = useStatePractice([]);
+  const [loadingComentarios,  setLoadingComentarios]  = useStatePractice(false);
+
   useEffectPractice(() => {
     setEscolhida(null); setConfirmada(false); setConfirmando(false); setFeedbackAPI(null); setTempo(0);
+    setComentariosAbertos(false); setComentarios([]);
   }, [session.idx]);
 
   useEffectPractice(() => {
@@ -204,6 +210,23 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
   const avancar = () => {
     if (session.idx + 1 >= total) onFinish();
     else setSession(s => ({ ...s, idx: s.idx + 1 }));
+  };
+
+  const abrirComentarios = async () => {
+    if (commentCache.has(q.id)) {
+      setComentarios(commentCache.get(q.id));
+      setComentariosAbertos(true);
+      return;
+    }
+    setLoadingComentarios(true);
+    setComentariosAbertos(true);
+    try {
+      const data = await window.apiFetch(`/question-comments/${q.id}`);
+      const lista = data.comments || [];
+      setCommentCache(m => { const nm = new Map(m); nm.set(q.id, lista); return nm; });
+      setComentarios(lista);
+    } catch { setComentarios([]); }
+    finally { setLoadingComentarios(false); }
   };
 
   const area    = AREAS[q.area_direito] || { label: q.area_direito || 'Área', icon: '⚖️', pillClass: 'area-pill-civil' };
@@ -290,6 +313,31 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
                   </div>
                   {acertou && <span className="chip chip-amarelo">+15 XP</span>}
                 </div>
+
+                <div style={{marginTop:12}}>
+                  <button className="btn btn-quiet btn-sm" onClick={abrirComentarios}>
+                    Comentários ({q.comment_count ?? 0})
+                  </button>
+                </div>
+
+                {comentariosAbertos && (
+                  <div style={{marginTop:12}}>
+                    {loadingComentarios && (
+                      <span style={{color:'var(--text-muted)', fontSize:'var(--text-sm)'}}>Carregando…</span>
+                    )}
+                    {!loadingComentarios && comentarios.length === 0 && (
+                      <div style={{color:'var(--text-muted)', fontSize:'var(--text-sm)'}}>Nenhum comentário para esta questão ainda.</div>
+                    )}
+                    {!loadingComentarios && comentarios.map(c => (
+                      <div key={c.id} style={{borderTop:'1px solid rgba(255,255,255,0.12)', paddingTop:10, marginTop:10}}>
+                        <div style={{fontSize:11, color:'var(--text-muted)', marginBottom:4}}>
+                          {c.admin_nome || 'Admin'} · {new Date(c.criado_em).toLocaleDateString('pt-BR')}
+                        </div>
+                        <div style={{fontSize:'var(--text-sm)'}}>{c.corpo}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
