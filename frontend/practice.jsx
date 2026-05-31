@@ -170,13 +170,8 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
   const [confirmando,    setConfirmando]    = useStatePractice(false);
   const [feedbackAPI,    setFeedbackAPI]    = useStatePractice(null);
   const [tempo,          setTempo]          = useStatePractice(0);
-  const [reportState,    setReportState]    = useStatePractice('idle'); // idle | form | sending | done | editing
-  const [reportText,     setReportText]     = useStatePractice('');
-  const [reportId,       setReportId]       = useStatePractice(null);
-
   useEffectPractice(() => {
     setEscolhida(null); setConfirmada(false); setConfirmando(false); setFeedbackAPI(null); setTempo(0);
-    setReportState('idle'); setReportText(''); setReportId(null);
   }, [session.idx]);
 
   useEffectPractice(() => {
@@ -209,35 +204,6 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
   const avancar = () => {
     if (session.idx + 1 >= total) onFinish();
     else setSession(s => ({ ...s, idx: s.idx + 1 }));
-  };
-
-  const abrirReport = () => setReportState('form');
-
-  const enviarReport = async () => {
-    if (!reportText.trim()) return;
-    setReportState('sending');
-    try {
-      if (reportState === 'editing' && reportId) {
-        await window.apiFetch(`/reports/${reportId}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ comentario: reportText }),
-        });
-      } else {
-        await window.apiFetch('/reports', {
-          method: 'POST',
-          body: JSON.stringify({ question_id: q.id, comentario: reportText }),
-        });
-      }
-      setReportState('done');
-    } catch (err) {
-      if (err.jaReportou) {
-        setReportId(err.reportId);
-        setReportState('editing');
-      } else {
-        setReportState('form');
-        alert(err.error || 'Erro ao enviar report');
-      }
-    }
   };
 
   const area    = AREAS[q.area_direito] || { label: q.area_direito || 'Área', icon: '⚖️', pillClass: 'area-pill-civil' };
@@ -320,55 +286,10 @@ function PracticeRunner({ session, setSession, onFinish, onExit }) {
                     </div>
                     <div className="qcard-feedback-sub">
                       Gabarito: letra <strong>{correta}</strong>
-                      {feedbackAPI?.legislacao_ref && <> · <span className="qcard-area-mono" style={{display:'inline'}}>{feedbackAPI.legislacao_ref}</span></>}
                     </div>
                   </div>
                   {acertou && <span className="chip chip-amarelo">+15 XP</span>}
                 </div>
-                {feedbackAPI?.explicacao && (
-                  <p className="qcard-feedback-body">{feedbackAPI.explicacao}</p>
-                )}
-                {feedbackAPI?.explicacao && (
-                  <div className="qcard-report-zone">
-                    {reportState === 'idle' && (
-                      <button className="btn btn-quiet btn-sm" style={{color:'var(--text-muted)', fontSize:12}} onClick={abrirReport}>
-                        ⚑ Reportar explicação
-                      </button>
-                    )}
-                    {reportState === 'done' && (
-                      <span style={{fontSize:12, color:'var(--green-dark)'}}>✓ Reportado — obrigado pela contribuição!</span>
-                    )}
-                    {(reportState === 'form' || reportState === 'editing' || reportState === 'sending') && (
-                      <div className="qcard-report-form">
-                        <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>
-                          {reportState === 'editing'
-                            ? 'Você já tem um report aberto para esta questão. Deseja atualizar sua mensagem?'
-                            : 'Esta explicação foi gerada por IA. O que você achou estranho?'}
-                        </div>
-                        <textarea
-                          className="input-field"
-                          rows={3}
-                          placeholder="Descreva o problema com a explicação..."
-                          value={reportText}
-                          onChange={e => setReportText(e.target.value)}
-                          style={{fontSize:13, resize:'vertical'}}
-                          disabled={reportState === 'sending'}
-                        />
-                        <div style={{display:'flex', gap:8, marginTop:6}}>
-                          <button className="btn btn-primary btn-sm"
-                                  disabled={!reportText.trim() || reportState === 'sending'}
-                                  onClick={enviarReport}>
-                            {reportState === 'sending' ? 'Enviando…' : reportState === 'editing' ? 'Atualizar' : 'Enviar'}
-                          </button>
-                          <button className="btn btn-quiet btn-sm" onClick={() => setReportState('idle')}
-                                  disabled={reportState === 'sending'}>
-                            Cancelar
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             )}
           </div>

@@ -335,17 +335,13 @@ function ReviewModal({ answer, onClose }) {
           <div className="qcard-feedback-head">
             <span className="qcard-feedback-ic">{acertou ? '✓' : '✕'}</span>
             <div>
-              <div className="qcard-feedback-title">Gabarito comentado</div>
+              <div className="qcard-feedback-title">{acertou ? 'Resposta correta!' : 'Quase lá — não foi dessa vez'}</div>
               <div className="qcard-feedback-sub">
-                Resposta correta: letra <strong>{answer.correta}</strong>
+                Gabarito: letra <strong>{answer.correta}</strong>
                 {answer.escolhida && <> · Você marcou <strong>{answer.escolhida}</strong></>}
-                {answer.legislacao_ref && <> · <span className="qcard-area-mono" style={{display:'inline'}}>{answer.legislacao_ref}</span></>}
               </div>
             </div>
           </div>
-          {answer.explicacao && (
-            <p className="qcard-feedback-body">{answer.explicacao}</p>
-          )}
         </div>
 
         <div className="modal-actions">

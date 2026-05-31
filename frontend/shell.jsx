@@ -32,8 +32,7 @@ function AppShell({ user, page, onNavigate, onPracticeStart, onLogout, onUserUpd
     { id: 'practice',   label: 'Praticar',     icon: '▶' },
     { id: 'stats',      label: 'Estatísticas', icon: '◇' },
     ...(user?.role === 'admin' ? [
-      { id: 'admin',      label: 'Admin',    icon: '⚙' },
-      { id: 'moderation', label: 'Revisões', icon: '⚑' },
+      { id: 'admin', label: 'Admin', icon: '⚙' },
     ] : []),
   ];
 
