@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const pool = require('./db');
+const { sendReengagementEmail } = require('./services/email.service');
 const questionsRouter = require('./routes/questions');
 const authRouter = require('./routes/auth');
 const sessionsRouter = require('./routes/sessions');
@@ -49,9 +50,44 @@ async function waitForDb(retries = 20, delay = 2000) {
   throw new Error('Could not connect to database after multiple retries.');
 }
 
+async function runReengagementJob() {
+  try {
+    const { rows } = await pool.query(`
+      SELECT et.id, et.user_id, u.email
+      FROM email_tokens et
+      JOIN users u ON u.id = et.user_id
+      WHERE et.type = 'verify_email'
+        AND et.used_at IS NULL
+        AND et.expires_at < NOW()
+        AND et.expires_at > NOW() - interval '48 hours'
+        AND et.reengagement_sent_at IS NULL
+    `);
+    for (const row of rows) {
+      try {
+        const newToken = await pool.query(
+          `INSERT INTO email_tokens (user_id, type, expires_at)
+           VALUES ($1, 'verify_email', NOW() + interval '48 hours')
+           RETURNING token`,
+          [row.user_id]
+        );
+        await sendReengagementEmail(row.email, newToken.rows[0].token);
+        await pool.query(
+          'UPDATE email_tokens SET reengagement_sent_at = NOW() WHERE id = $1',
+          [row.id]
+        );
+      } catch (err) {
+        console.error('reengagement job error for user', row.user_id, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('reengagement job query error:', err.message);
+  }
+}
+
 waitForDb()
   .then(() => {
     app.listen(PORT, () => console.log(`Backend listening on port ${PORT}`));
+    setInterval(runReengagementJob, 60 * 60 * 1000); // roda a cada 1h
   })
   .catch((err) => {
     console.error(err.message);

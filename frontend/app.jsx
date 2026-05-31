@@ -5,19 +5,38 @@ const API = '/api';
 const TOKEN_KEY = 'oab_token';
 
 function App() {
-  const [route, setRoute]     = useStateApp('loading'); // loading | splash | register | app
-  const [page, setPage]       = useStateApp('dashboard');
-  const [user, setUser]       = useStateApp(null);
-  const [token, setToken]     = useStateApp(null);
-  const [toast, setToast]     = useStateApp(null);
+  // route: loading | splash | register | app | verify-email | reset-password | email-pending | forgot-password
+  const [route, setRoute]               = useStateApp('loading');
+  const [page, setPage]                 = useStateApp('dashboard');
+  const [user, setUser]                 = useStateApp(null);
+  const [token, setToken]               = useStateApp(null);
+  const [toast, setToast]               = useStateApp(null);
+  const [urlToken, setUrlToken]         = useStateApp(null);
+  const [emailPending, setEmailPending] = useStateApp({ email: '', tokenExpired: false });
 
   const flashToast = (t) => {
     setToast(t);
     setTimeout(() => setToast(null), 4200);
   };
 
-  // Ao iniciar: verifica token salvo e valida com a API
+  // Ao iniciar: verifica rotas de e-mail (links dos e-mails) antes do token
   useEffectApp(() => {
+    const path = window.location.pathname;
+
+    if (path === '/verificar-email') {
+      const params = new URLSearchParams(window.location.search);
+      setUrlToken(params.get('token'));
+      setRoute('verify-email');
+      return;
+    }
+
+    if (path === '/redefinir-senha') {
+      const params = new URLSearchParams(window.location.search);
+      setUrlToken(params.get('token'));
+      setRoute('reset-password');
+      return;
+    }
+
     const saved = localStorage.getItem(TOKEN_KEY);
     if (!saved) { setRoute('splash'); return; }
 
@@ -60,13 +79,18 @@ function App() {
 
   const handleRegisterComplete = (userData, newToken) => {
     doLogin(userData, newToken);
-    flashToast({ kind: 'xp', title: '+50 XP de boas-vindas!', body: 'Conta criada · plano de estudo gerado.' });
+    flashToast({ kind: 'xp', title: '+50 XP de boas-vindas!', body: 'Conta criada · verifique seu e-mail para garantir o acesso.' });
+  };
+
+  const handleEmailNotVerified = (email, tokenExpired) => {
+    setEmailPending({ email, tokenExpired });
+    setRoute('email-pending');
   };
 
   const handleNavigate = (p) => setPage(p);
   const handlePracticeStart = () => setPage('practice');
 
-  // Tela de carregamento (verifica token)
+  // Tela de carregamento
   if (route === 'loading') {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-base)' }}>
@@ -78,11 +102,55 @@ function App() {
     );
   }
 
+  if (route === 'verify-email') {
+    return (
+      <window.AuthFlow.VerifyEmailScreen
+        token={urlToken}
+        onGoToLogin={() => {
+          window.history.replaceState({}, '', '/');
+          setRoute('splash');
+        }}
+      />
+    );
+  }
+
+  if (route === 'reset-password') {
+    return (
+      <window.AuthFlow.ResetPasswordScreen
+        token={urlToken}
+        onGoToLogin={() => {
+          window.history.replaceState({}, '', '/');
+          setRoute('splash');
+        }}
+      />
+    );
+  }
+
+  if (route === 'email-pending') {
+    return (
+      <window.AuthFlow.EmailVerifyPendingScreen
+        email={emailPending.email}
+        tokenExpired={emailPending.tokenExpired}
+        onBack={() => setRoute('splash')}
+      />
+    );
+  }
+
+  if (route === 'forgot-password') {
+    return (
+      <window.AuthFlow.ForgotPasswordScreen
+        onBack={() => setRoute('splash')}
+      />
+    );
+  }
+
   if (route === 'splash') {
     return (
       <window.AuthFlow.SplashScreen
         onStart={handleRegisterStart}
         onLogin={handleLogin}
+        onEmailNotVerified={handleEmailNotVerified}
+        onForgotPassword={() => setRoute('forgot-password')}
       />
     );
   }

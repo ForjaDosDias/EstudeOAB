@@ -504,7 +504,7 @@ function AdminUploadCSV({ token }) {
   const parsePreview = (f) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      const text = e.target.result.replace(/^﻿/, '');
+      const text = e.target.result.replace(/^\ufeff/, '');
       const lines = text.split('\n').filter(l => l.trim());
       if (lines.length < 2) { setPreview(null); return; }
       const headers = lines[0].split(';').map(h => h.trim());

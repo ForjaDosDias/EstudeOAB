@@ -135,6 +135,26 @@ describe('POST /api/questions/upload', () => {
     expect(res.body.error).toMatch(/vazio/i);
   });
 
+  it('200 ignora questões com gabarito ANULADA', async () => {
+    const csv = 'enunciado;gabarito;banca\nQuestão anulada;ANULADA;FGV\nOutra anulada;anulada;FGV\n';
+
+    const mockClient = {
+      query: jest.fn()
+        .mockResolvedValueOnce({})  // BEGIN
+        .mockResolvedValueOnce({}), // COMMIT
+      release: jest.fn(),
+    };
+    pool.connect.mockResolvedValue(mockClient);
+
+    const res = await request(app)
+      .post('/api/questions/upload')
+      .set('Authorization', `Bearer ${adminToken()}`)
+      .attach('csv', Buffer.from(csv), 'questoes.csv');
+    expect(res.status).toBe(200);
+    expect(res.body.anuladas).toBe(2);
+    expect(res.body.inserted).toBe(0);
+  });
+
   it('200 contabiliza skipped quando linha não tem enunciado', async () => {
     const csv = 'enunciado;gabarito;banca\n;A;FGV\n';
 
@@ -161,7 +181,9 @@ describe('POST /api/questions/upload', () => {
     const mockClient = {
       query: jest.fn()
         .mockResolvedValueOnce({})                              // BEGIN
+        .mockResolvedValueOnce({})                              // SAVEPOINT
         .mockResolvedValueOnce({ rows: [{ is_insert: true }] }) // INSERT
+        .mockResolvedValueOnce({})                              // RELEASE SAVEPOINT
         .mockResolvedValueOnce({}),                             // COMMIT
       release: jest.fn(),
     };
@@ -184,9 +206,11 @@ describe('POST /api/questions/upload', () => {
 
     const mockClient = {
       query: jest.fn()
-        .mockResolvedValueOnce({})
-        .mockResolvedValueOnce({ rows: [{ is_insert: false }] })
-        .mockResolvedValueOnce({}),
+        .mockResolvedValueOnce({})                               // BEGIN
+        .mockResolvedValueOnce({})                               // SAVEPOINT
+        .mockResolvedValueOnce({ rows: [{ is_insert: false }] }) // INSERT
+        .mockResolvedValueOnce({})                               // RELEASE SAVEPOINT
+        .mockResolvedValueOnce({}),                              // COMMIT
       release: jest.fn(),
     };
     pool.connect.mockResolvedValue(mockClient);
@@ -201,14 +225,16 @@ describe('POST /api/questions/upload', () => {
     expect(res.body.updated).toBe(1);
   });
 
-  it('500 e ROLLBACK em erro de transação', async () => {
+  it('200 conta linha como skipped quando INSERT falha mas segue processando', async () => {
     const csv = 'enunciado;gabarito\nQuestão teste;A\n';
 
     const mockClient = {
       query: jest.fn()
-        .mockResolvedValueOnce({})            // BEGIN
-        .mockRejectedValueOnce(new Error('constraint'))  // INSERT falha
-        .mockResolvedValueOnce({}),           // ROLLBACK
+        .mockResolvedValueOnce({})                          // BEGIN
+        .mockResolvedValueOnce({})                          // SAVEPOINT
+        .mockRejectedValueOnce(new Error('constraint'))     // INSERT falha
+        .mockResolvedValueOnce({})                          // ROLLBACK TO SAVEPOINT
+        .mockResolvedValueOnce({}),                         // COMMIT
       release: jest.fn(),
     };
     pool.connect.mockResolvedValue(mockClient);

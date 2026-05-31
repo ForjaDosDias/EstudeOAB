@@ -155,3 +155,20 @@ CREATE TABLE IF NOT EXISTS question_edits (
 );
 
 CREATE INDEX IF NOT EXISTS idx_question_edits_q ON question_edits(question_id);
+
+-- ── Verificação de e-mail e reset de senha ────────────────────────────────────
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS email_tokens (
+  id                   UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id              INTEGER     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token                UUID        NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+  type                 VARCHAR(30) NOT NULL,   -- 'verify_email' | 'reset_password'
+  expires_at           TIMESTAMPTZ NOT NULL,
+  used_at              TIMESTAMPTZ,
+  reengagement_sent_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_tokens_user   ON email_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_email_tokens_lookup ON email_tokens(type, expires_at, used_at, reengagement_sent_at);

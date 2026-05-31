@@ -28,6 +28,9 @@ services:
       NODE_ENV: production
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET env var is required}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?DEEPSEEK_API_KEY env var is required}
+      RESEND_API_KEY: ${RESEND_API_KEY:?RESEND_API_KEY env var is required}
+      RESEND_FROM: ${RESEND_FROM:-noreply@aprovanoab.com.br}
+      APP_URL: ${APP_URL:-https://aprovanoab.com.br}
     # sem port binding — API acessível apenas via nginx dentro da rede Docker
     depends_on:
       db:

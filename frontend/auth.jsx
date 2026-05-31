@@ -6,11 +6,18 @@ const API = '/api';
 /* =========================================================
    Splash Screen
    ========================================================= */
-function SplashScreen({ onStart, onLogin }) {
+function SplashScreen({ onStart, onLogin, onEmailNotVerified, onForgotPassword }) {
   const [showLogin, setShowLogin] = useState(false);
 
   if (showLogin) {
-    return <LoginScreen onBack={() => setShowLogin(false)} onLogin={onLogin} />;
+    return (
+      <LoginScreen
+        onBack={() => setShowLogin(false)}
+        onLogin={onLogin}
+        onEmailNotVerified={onEmailNotVerified}
+        onForgotPassword={onForgotPassword}
+      />
+    );
   }
 
   return (
@@ -64,7 +71,7 @@ function SplashScreen({ onStart, onLogin }) {
 /* =========================================================
    Login Screen
    ========================================================= */
-function LoginScreen({ onBack, onLogin }) {
+function LoginScreen({ onBack, onLogin, onEmailNotVerified, onForgotPassword }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
@@ -81,6 +88,10 @@ function LoginScreen({ onBack, onLogin }) {
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
+      if (res.status === 403 && data.code === 'EMAIL_NOT_VERIFIED') {
+        onEmailNotVerified(email, data.tokenExpired);
+        return;
+      }
       if (!res.ok) throw new Error(data.error || 'Erro ao fazer login');
       onLogin(data.user, data.token);
     } catch (err) {
@@ -149,10 +160,418 @@ function LoginScreen({ onBack, onLogin }) {
           </button>
         </form>
 
+        <div style={{ textAlign: 'center', marginTop: 16 }}>
+          <button className="btn-link" onClick={onForgotPassword} style={{ fontSize: 13 }}>
+            Esqueceu a senha?
+          </button>
+        </div>
+
         <p className="login-footer-text">
           Não tem conta?{' '}
           <button className="btn-link" onClick={onBack}>Criar conta grátis</button>
         </p>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   Email verificação pendente (após login bloqueado)
+   ========================================================= */
+function EmailVerifyPendingScreen({ email, tokenExpired, onBack, onResent }) {
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleResend = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/auth/resend-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao reenviar');
+      setSent(true);
+      if (onResent) onResent();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-wrap fade-in">
+      <div className="splash-bg-shape splash-bg-bordo" />
+      <div className="splash-bg-shape splash-bg-amarelo" />
+
+      <div className="login-box" style={{ textAlign: 'center' }}>
+        <div className="email-pending-icon">✉</div>
+
+        <h2 className="reg-title" style={{ marginBottom: 12 }}>
+          {sent ? 'Novo e-mail enviado!' : 'Confirme seu e-mail'}
+        </h2>
+
+        {sent ? (
+          <p className="reg-sub">
+            Enviamos um novo link de verificação para{' '}
+            <strong className="email-highlight">{email}</strong>.
+            Verifique sua caixa de entrada e a pasta de spam.
+          </p>
+        ) : (
+          <p className="reg-sub">
+            Enviamos um link de verificação para{' '}
+            <strong className="email-highlight">{email}</strong>.
+            Clique no link para liberar seu acesso.
+          </p>
+        )}
+
+        {!sent && tokenExpired && (
+          <div style={{ marginTop: 8, marginBottom: 4 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
+              O link expirou. Clique abaixo para receber um novo.
+            </p>
+            <button
+              className="btn btn-primary btn-lg"
+              style={{ width: '100%' }}
+              onClick={handleResend}
+              disabled={loading}
+            >
+              {loading ? 'Enviando…' : 'Reenviar e-mail de verificação'}
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <div className="login-error" style={{ marginTop: 12 }}>
+            <span>✕</span> {error}
+          </div>
+        )}
+
+        <div style={{ marginTop: 24 }}>
+          <button className="btn-link" onClick={onBack} style={{ fontSize: 13 }}>
+            ← Tentar fazer login novamente
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   Esqueceu a senha
+   ========================================================= */
+function ForgotPasswordScreen({ onBack }) {
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao processar');
+      setSent(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-wrap fade-in">
+      <div className="splash-bg-shape splash-bg-bordo" />
+      <div className="splash-bg-shape splash-bg-amarelo" />
+
+      <div className="login-box">
+        <button className="reg-back" onClick={onBack} style={{ marginBottom: 24 }}>← Voltar</button>
+
+        <div className="splash-mark" style={{ marginBottom: 32 }}>
+          <div className="splash-mark-circle" style={{ width: 40, height: 40 }}>
+            <span className="splash-mark-letter" style={{ fontSize: 18 }}>A</span>
+          </div>
+          <div>
+            <div className="splash-brand" style={{ fontSize: 18 }}>Aprovado OAB</div>
+            <div className="splash-eyebrow">Recuperar senha</div>
+          </div>
+        </div>
+
+        {sent ? (
+          <div style={{ textAlign: 'center' }}>
+            <div className="email-pending-icon">✉</div>
+            <h3 style={{ fontFamily: 'var(--font-display)', marginBottom: 12 }}>E-mail enviado!</h3>
+            <p className="reg-sub">
+              Se <strong className="email-highlight">{email}</strong> estiver cadastrado,
+              você receberá um link para redefinir sua senha. Verifique também a pasta de spam.
+            </p>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }}>
+              O link expira em 1 hora.
+            </p>
+            <button className="btn-link" onClick={onBack} style={{ marginTop: 24, display: 'block', fontSize: 13 }}>
+              ← Voltar para o login
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="reg-form">
+            <p className="reg-sub" style={{ marginBottom: 24, marginTop: 0 }}>
+              Informe o e-mail da sua conta e enviaremos um link para criar uma nova senha.
+            </p>
+            <div className="input-group">
+              <label className="input-label">E-mail</label>
+              <input
+                className="input-field"
+                type="email"
+                placeholder="voce@email.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                autoFocus
+                required
+              />
+            </div>
+
+            {error && (
+              <div className="login-error">
+                <span>✕</span> {error}
+              </div>
+            )}
+
+            <button
+              className="btn btn-primary btn-lg"
+              type="submit"
+              disabled={loading || !email}
+              style={{ width: '100%', marginTop: 8 }}
+            >
+              {loading ? 'Enviando…' : 'Enviar link de recuperação →'}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   Verificar e-mail (acessado pelo link no e-mail)
+   ========================================================= */
+function VerifyEmailScreen({ token, onGoToLogin }) {
+  const [status, setStatus] = useState('loading'); // loading | success | error
+  const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => {
+    if (!token) {
+      setErrorMsg('Link inválido. Nenhum token encontrado.');
+      setStatus('error');
+      return;
+    }
+    fetch(`${API}/auth/verify-email?token=${encodeURIComponent(token)}`)
+      .then(async res => {
+        const data = await res.json();
+        if (!res.ok) {
+          if (data.code === 'TOKEN_EXPIRED') throw new Error('O link expirou. Faça login para solicitar um novo.');
+          if (data.code === 'TOKEN_USED')    throw new Error('Este link já foi utilizado. Faça login normalmente.');
+          throw new Error(data.error || 'Link inválido.');
+        }
+        setStatus('success');
+      })
+      .catch(err => {
+        setErrorMsg(err.message);
+        setStatus('error');
+      });
+  }, [token]);
+
+  return (
+    <div className="login-wrap fade-in">
+      <div className="splash-bg-shape splash-bg-bordo" />
+      <div className="splash-bg-shape splash-bg-amarelo" />
+
+      <div className="login-box" style={{ textAlign: 'center' }}>
+        <div className="splash-mark" style={{ justifyContent: 'center', marginBottom: 32 }}>
+          <div className="splash-mark-circle" style={{ width: 40, height: 40 }}>
+            <span className="splash-mark-letter" style={{ fontSize: 18 }}>A</span>
+          </div>
+          <div>
+            <div className="splash-brand" style={{ fontSize: 18 }}>Aprovado OAB</div>
+          </div>
+        </div>
+
+        {status === 'loading' && (
+          <>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>⏳</div>
+            <p className="reg-sub">Verificando seu e-mail…</p>
+          </>
+        )}
+
+        {status === 'success' && (
+          <>
+            <div className="email-pending-icon" style={{ color: 'var(--green-dark)' }}>✓</div>
+            <h2 className="reg-title" style={{ marginBottom: 12 }}>E-mail confirmado!</h2>
+            <p className="reg-sub">Sua conta está ativa. Você já pode fazer login e começar a estudar.</p>
+            <button
+              className="btn btn-primary btn-lg"
+              style={{ width: '100%', marginTop: 24 }}
+              onClick={onGoToLogin}
+            >
+              Ir para o login →
+            </button>
+          </>
+        )}
+
+        {status === 'error' && (
+          <>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>⚠</div>
+            <h2 className="reg-title" style={{ marginBottom: 12 }}>Não foi possível confirmar</h2>
+            <p className="reg-sub" style={{ color: 'var(--text-muted)' }}>{errorMsg}</p>
+            <button
+              className="btn btn-ghost btn-lg"
+              style={{ width: '100%', marginTop: 24 }}
+              onClick={onGoToLogin}
+            >
+              ← Voltar para o login
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   Redefinir senha (acessado pelo link no e-mail)
+   ========================================================= */
+function ResetPasswordScreen({ token, onGoToLogin }) {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState(null);
+
+  if (!token) {
+    return (
+      <div className="login-wrap fade-in">
+        <div className="login-box" style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 40, marginBottom: 16 }}>⚠</div>
+          <p className="reg-sub">Link inválido. Solicite um novo link de redefinição de senha.</p>
+          <button className="btn btn-ghost btn-lg" style={{ marginTop: 16 }} onClick={onGoToLogin}>← Voltar para o login</button>
+        </div>
+      </div>
+    );
+  }
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (password !== confirm) {
+      setError('As senhas não coincidem.');
+      return;
+    }
+    setError(null);
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.code === 'TOKEN_EXPIRED') throw new Error('O link expirou. Solicite um novo pela tela de login.');
+        if (data.code === 'TOKEN_USED')    throw new Error('Este link já foi utilizado. Faça login ou solicite outro.');
+        throw new Error(data.error || 'Erro ao redefinir senha');
+      }
+      setDone(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-wrap fade-in">
+      <div className="splash-bg-shape splash-bg-bordo" />
+      <div className="splash-bg-shape splash-bg-amarelo" />
+
+      <div className="login-box">
+        <div className="splash-mark" style={{ marginBottom: 32 }}>
+          <div className="splash-mark-circle" style={{ width: 40, height: 40 }}>
+            <span className="splash-mark-letter" style={{ fontSize: 18 }}>A</span>
+          </div>
+          <div>
+            <div className="splash-brand" style={{ fontSize: 18 }}>Aprovado OAB</div>
+            <div className="splash-eyebrow">Nova senha</div>
+          </div>
+        </div>
+
+        {done ? (
+          <div style={{ textAlign: 'center' }}>
+            <div className="email-pending-icon" style={{ color: 'var(--green-dark)' }}>✓</div>
+            <h2 className="reg-title" style={{ marginBottom: 12 }}>Senha redefinida!</h2>
+            <p className="reg-sub">Sua nova senha foi salva com sucesso. Agora você pode fazer login.</p>
+            <button
+              className="btn btn-primary btn-lg"
+              style={{ width: '100%', marginTop: 24 }}
+              onClick={onGoToLogin}
+            >
+              Ir para o login →
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="reg-form">
+            <p className="reg-sub" style={{ marginBottom: 24, marginTop: 0 }}>
+              Escolha uma nova senha para sua conta.
+            </p>
+            <div className="input-group">
+              <label className="input-label">Nova senha</label>
+              <input
+                className="input-field"
+                type="password"
+                placeholder="Mínimo 8 caracteres"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                autoFocus
+                required
+              />
+              <PasswordStrength value={password} />
+            </div>
+            <div className="input-group">
+              <label className="input-label">Confirmar nova senha</label>
+              <input
+                className="input-field"
+                type="password"
+                placeholder="Repita a senha"
+                value={confirm}
+                onChange={e => setConfirm(e.target.value)}
+                required
+              />
+            </div>
+
+            {error && (
+              <div className="login-error">
+                <span>✕</span> {error}
+              </div>
+            )}
+
+            <button
+              className="btn btn-primary btn-lg"
+              type="submit"
+              disabled={loading || password.length < 8 || !confirm}
+              style={{ width: '100%', marginTop: 8 }}
+            >
+              {loading ? 'Salvando…' : 'Salvar nova senha →'}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -521,4 +940,11 @@ function StepPronto({ form }) {
   );
 }
 
-window.AuthFlow = { SplashScreen, RegisterFlow };
+window.AuthFlow = {
+  SplashScreen,
+  RegisterFlow,
+  EmailVerifyPendingScreen,
+  ForgotPasswordScreen,
+  VerifyEmailScreen,
+  ResetPasswordScreen,
+};

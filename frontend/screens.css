@@ -344,7 +344,10 @@
   margin-top: auto; padding-top: 16px;
   border-top: 1px solid rgba(245,240,235,.08);
   display: flex; align-items: center; gap: 12px;
+  cursor: pointer; border-radius: var(--r-sm);
+  transition: background 150ms;
 }
+.sidebar-user:hover { background: rgba(245,240,235,.05); }
 .sidebar-avatar {
   width: 36px; height: 36px; border-radius: 50%; background: var(--bordo);
   display: flex; align-items: center; justify-content: center;
@@ -839,6 +842,23 @@
 .sidebar-user-popup-item.logout { color: #dc2626; }
 
 /* =========================================================
+   PAINEL DE PERFIL
+   ========================================================= */
+.profile-panel { max-width: 480px; }
+.profile-section {
+  padding: 20px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.profile-section:first-of-type { border-top: none; padding-top: 0; }
+.profile-section-title {
+  font-family: var(--font-body); font-size: 11px; font-weight: 700;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: .08em;
+  margin-bottom: 16px;
+}
+.profile-save-row { display: flex; align-items: center; gap: 14px; margin-top: 16px; }
+.profile-ok { font-size: var(--text-sm); font-weight: 600; color: var(--green-dark); }
+
+/* =========================================================
    ADMIN
    ========================================================= */
 .admin-page { max-width: 1100px; margin: 0 auto; padding: 40px 32px; }
@@ -936,3 +956,18 @@
 
 /* Questoes page */
 .admin-questoes { }
+
+/* =========================================================
+   EMAIL VERIFY / RESET / FORGOT PASSWORD
+   ========================================================= */
+.email-pending-icon {
+  font-size: 52px;
+  margin-bottom: 20px;
+  display: block;
+  line-height: 1;
+}
+.email-highlight {
+  color: var(--azul-dark);
+  font-weight: 600;
+  word-break: break-all;
+}
