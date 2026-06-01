@@ -1,4 +1,4 @@
-/* global React */
+/* global React, ReactDOM */
 const { useState: useStateStats, useEffect: useEffectStats } = React;
 
 /* =========================================================
@@ -346,7 +346,7 @@ function ReviewModal({ answer, onClose, commentCache, setCommentCache }) {
     { letra: 'D', texto: answer.alternativa_d },
   ].filter(o => o.texto);
 
-  return (
+  return ReactDOM.createPortal(
     <div className="modal-backdrop fade-in" onClick={onClose}>
       <div className="modal-panel fade-up" onClick={e => e.stopPropagation()}>
         <header className="modal-head">
@@ -443,7 +443,8 @@ function ReviewModal({ answer, onClose, commentCache, setCommentCache }) {
           <button className="btn btn-primary" onClick={onClose}>Fechar</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
