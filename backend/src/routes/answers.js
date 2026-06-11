@@ -1,6 +1,7 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { awardQuestionBlock } = require('../services/coins.service');
 
 const router = express.Router();
 
@@ -45,11 +46,18 @@ router.post('/', requireAuth, async (req, res) => {
       [userId, session_id, question_id, escolhidaUp, correta, acertou, tempo_s]
     );
 
+    // Moedas a cada 5 questões respondidas no dia (idempotente por bloco)
+    const moedasGanhas = await awardQuestionBlock(userId).catch((err) => {
+      console.error('award question block error:', err.message);
+      return 0;
+    });
+
     res.status(201).json({
       acertou,
       correta,
       explicacao:    question.explicacao    || null,
       legislacao_ref: question.legislacao_ref || null,
+      moedasGanhas,
     });
   } catch (err) {
     if (err.code === '23505') {

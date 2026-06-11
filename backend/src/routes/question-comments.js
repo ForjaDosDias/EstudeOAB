@@ -1,6 +1,7 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { awardComment } = require('../services/coins.service');
 
 const router = express.Router();
 
@@ -46,7 +47,14 @@ router.post('/:questionId', requireAuth, async (req, res) => {
          (SELECT nome FROM users WHERE id = $2) AS autor_nome`,
       [questionId, authorId, corpo.trim()]
     );
-    res.status(201).json(result.rows[0]);
+
+    // Moedas por comentário (limitado por dia, idempotente por comentário)
+    const moedasGanhas = await awardComment(authorId, result.rows[0].id).catch((err) => {
+      console.error('award comment error:', err.message);
+      return 0;
+    });
+
+    res.status(201).json({ ...result.rows[0], moedasGanhas });
   } catch (err) {
     console.error('POST /question-comments error:', err.message);
     res.status(500).json({ error: 'Erro ao criar comentário' });

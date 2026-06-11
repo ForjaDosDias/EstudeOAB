@@ -197,3 +197,43 @@ describe('GET /api/answers/history', () => {
     expect(res.body.answers[0].area_direito).toBe('penal');
   });
 });
+
+// ── Moedas por bloco de 5 questões ────────────────────────────────────────────
+
+describe('POST /api/answers — moedas', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('credita moedas na 5ª resposta do dia', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [fakeSession] })            // SELECT sessions
+      .mockResolvedValueOnce({ rows: [fakeQuestion] })           // SELECT questions
+      .mockResolvedValueOnce({ rows: [] })                       // INSERT answers
+      .mockResolvedValueOnce({ rows: [{ total: 5 }] })           // COUNT respostas do dia
+      .mockResolvedValueOnce({ rows: [{ id: 9 }] })              // INSERT coin_transactions
+      .mockResolvedValueOnce({ rows: [] });                      // UPDATE saldo
+
+    const res = await request(app)
+      .post('/api/answers')
+      .set('Authorization', `Bearer ${token()}`)
+      .send({ session_id: 1, question_id: 10, escolhida: 'A', tempo_s: 30 });
+
+    expect(res.status).toBe(201);
+    expect(res.body.moedasGanhas).toBe(10);
+  });
+
+  it('não credita fora do bloco de 5', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [fakeSession] })
+      .mockResolvedValueOnce({ rows: [fakeQuestion] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ total: 2 }] });
+
+    const res = await request(app)
+      .post('/api/answers')
+      .set('Authorization', `Bearer ${token()}`)
+      .send({ session_id: 1, question_id: 10, escolhida: 'B', tempo_s: 12 });
+
+    expect(res.status).toBe(201);
+    expect(res.body.moedasGanhas).toBe(0);
+  });
+});

@@ -11,6 +11,10 @@ const adminRouter         = require('./routes/admin');
 // const reportsRouter       = require('./routes/reports'); // desativado
 const notificationsRouter = require('./routes/notifications');
 const questionCommentsRouter = require('./routes/question-comments');
+const paymentsRouter      = require('./routes/payments');
+const coinsRouter         = require('./routes/coins');
+const trilhasRouter       = require('./routes/trilhas');
+const adsRouter           = require('./routes/ads');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -27,6 +31,10 @@ app.use('/api/admin',         adminRouter);
 // app.use('/api/reports',       reportsRouter); // desativado
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/question-comments', questionCommentsRouter);
+app.use('/api/payments',      paymentsRouter);
+app.use('/api/coins',         coinsRouter);
+app.use('/api/trilhas',       trilhasRouter);
+app.use('/api/ads',           adsRouter);
 
 app.get('/api/health', async (req, res) => {
   try {
