@@ -37,8 +37,31 @@ PUT    /api/admin/questions/:id    — edita questão                           
 POST   /api/admin/questions/:id/explicacao — gera explicação via DeepSeek     [requireAdmin]
 DELETE /api/admin/questions/:id    — remove questão                           [requireAdmin]
 
+GET    /api/payments/config       — public key MP + preço do Premium          [requireAuth]
+POST   /api/payments/pix          — cria pagamento Pix, retorna QR code       [requireAuth]
+POST   /api/payments/card         — paga com cartão (token do SDK MP)         [requireAuth]
+GET    /api/payments/:id/status   — polling do status (fluxo Pix)             [requireAuth]
+POST   /api/payments/webhook      — notificações do Mercado Pago (sem auth)
+
+GET    /api/coins                 — saldo + histórico de moedas               [requireAuth]
+GET    /api/ads/config            — config de anúncios (Free: AdSense 30s)    [requireAuth]
+
+GET    /api/trilhas               — lista trilhas de estudo                   [requirePremium]
+GET    /api/trilhas/:slug/questoes — sorteia questões da trilha               [requirePremium]
+
 GET    /api/health                 — { ok, db }
 ```
+
+## Freemium
+
+- `users.plan` (`free` | `premium`) + `users.premium_until` (NULL = vitalício). `isPremium()` em `src/middleware/plan.js`; admins sempre passam.
+- **Premium**: stats (`/api/stats/*` inteiro tem `requirePremium`), trilhas, filtro `?trilha=` no sortear, tema escuro (frontend), sem anúncios.
+- **Free**: prática liberada, com anúncios (`/api/ads/config`).
+- Pagamento aprovado → +30 dias de premium (`activatePremium` em `routes/payments.js`, idempotente via `payments.ativado_em`).
+
+## Moedas (`src/services/coins.service.js`)
+
+`coin_transactions` com UNIQUE(user_id, tipo, referencia) = idempotência. Regras: login diário +5, a cada 5 questões/dia +10, compra +100, comentário +2 (máx 3/dia). Saldo em `users.coins`.
 
 ## Tabelas principais (PostgreSQL)
 

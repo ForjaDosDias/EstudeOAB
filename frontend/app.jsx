@@ -13,6 +13,35 @@ function App() {
   const [toast, setToast]               = useStateApp(null);
   const [urlToken, setUrlToken]         = useStateApp(null);
   const [emailPending, setEmailPending] = useStateApp({ email: '', tokenExpired: false });
+  const [showUpgrade, setShowUpgrade]   = useStateApp(false);
+  const [adWatched, setAdWatched]       = useStateApp(false);
+  const [theme, setTheme]               = useStateApp(localStorage.getItem('oab_theme') || 'light');
+
+  const isPremium = user?.plan === 'premium' || user?.role === 'admin';
+
+  // Tema escuro é recurso Premium — aplica só quando o plano permite
+  useEffectApp(() => {
+    const dark = theme === 'dark' && isPremium;
+    document.body.classList.toggle('theme-dark', dark);
+    localStorage.setItem('oab_theme', theme);
+  }, [theme, isPremium]);
+
+  const toggleTheme = () => setTheme(t => (t === 'dark' ? 'light' : 'dark'));
+
+  const refreshUser = () => {
+    const saved = localStorage.getItem(TOKEN_KEY);
+    if (!saved) return;
+    fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${saved}` } })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(setUser)
+      .catch(() => {});
+  };
+
+  const handleUpgraded = () => {
+    setShowUpgrade(false);
+    refreshUser();
+    flashToast({ kind: 'xp', title: 'Bem-vindo ao Premium! ✨', body: 'Stats, trilhas e tema desbloqueados — e zero anúncios.' });
+  };
 
   const flashToast = (t) => {
     setToast(t);
@@ -88,7 +117,7 @@ function App() {
   };
 
   const handleNavigate = (p) => setPage(p);
-  const handlePracticeStart = () => setPage('practice');
+  const handlePracticeStart = () => { setAdWatched(false); setPage('practice'); };
 
   // Tela de carregamento
   if (route === 'loading') {
@@ -175,11 +204,26 @@ function App() {
         onPracticeStart={handlePracticeStart}
         onLogout={doLogout}
         onUserUpdate={setUser}
+        onUpgrade={() => setShowUpgrade(true)}
+        onToggleTheme={toggleTheme}
+        theme={theme}
       >
         {page === 'dashboard' && <window.Shell.Dashboard user={user} onPracticeStart={handlePracticeStart} onNavigate={handleNavigate} />}
-        {page === 'practice'  && <window.Practice.PracticeFlow user={user} token={token} onUserUpdate={setUser} onExit={() => setPage('dashboard')} onNavigate={handleNavigate} />}
-        {page === 'stats'     && <window.Stats.StatsPage onNavigate={handleNavigate} />}
-        {page === 'review'    && <window.Stats.StatsPage onNavigate={handleNavigate} />}
+        {page === 'practice'  && (!isPremium && !adWatched
+          ? <window.Premium.AdVideoGate onDone={() => setAdWatched(true)} onUpgrade={() => setShowUpgrade(true)} />
+          : <window.Practice.PracticeFlow user={user} token={token} onUserUpdate={setUser} onExit={() => setPage('dashboard')} onNavigate={handleNavigate} onUpgrade={() => setShowUpgrade(true)} />)}
+        {(page === 'stats' || page === 'review') && (isPremium
+          ? <window.Stats.StatsPage onNavigate={handleNavigate} />
+          : (
+            <div style={{ padding: 64, textAlign: 'center' }}>
+              <div style={{ fontSize: 40, marginBottom: 16 }}>🔒</div>
+              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Estatísticas são Premium</div>
+              <div style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
+                Acompanhe sua evolução por área, streak e plano de estudos personalizado.
+              </div>
+              <button className="btn-primary" onClick={() => setShowUpgrade(true)}>Desbloquear estatísticas</button>
+            </div>
+          ))}
         {page === 'admin'      && user?.role === 'admin' && <window.Admin.AdminPage token={token} onNavigate={handleNavigate} />}
         {page === 'admin'     && user?.role !== 'admin' && (
           <div style={{ padding: 64, textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -189,6 +233,13 @@ function App() {
           </div>
         )}
       </window.Shell.AppShell>
+
+      {showUpgrade && (
+        <window.Premium.UpgradeModal
+          onClose={() => setShowUpgrade(false)}
+          onUpgraded={handleUpgraded}
+        />
+      )}
 
       {toast && (
         <div className="toast-stack">

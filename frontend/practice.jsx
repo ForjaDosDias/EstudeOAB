@@ -18,7 +18,7 @@ function formatarQuestao(q) {
 /* =========================================================
    Jornada de prática — setup → questionário → resultado
    ========================================================= */
-function PracticeFlow({ user, onUserUpdate, onExit, onNavigate }) {
+function PracticeFlow({ user, onUserUpdate, onExit, onNavigate, onUpgrade }) {
   const [phase,   setPhase]   = useStatePractice('setup');
   const [config,  setConfig]  = useStatePractice({ modo: 'rapida', areas: ['civil', 'const', 'etica'], total: 5 });
   const [session, setSession] = useStatePractice(null);
@@ -48,14 +48,15 @@ function PracticeFlow({ user, onUserUpdate, onExit, onNavigate }) {
 
   const finishSession = () => setPhase('result');
 
-  if (phase === 'setup')  return <PracticeSetup user={user} config={config} setConfig={setConfig} onStart={startSession} onExit={onExit} loading={loading} erro={erro} />;
+  if (phase === 'setup')  return <PracticeSetup user={user} config={config} setConfig={setConfig} onStart={startSession} onExit={onExit} loading={loading} erro={erro} onUpgrade={onUpgrade} />;
   if (phase === 'run')    return <PracticeRunner session={session} setSession={setSession} onFinish={finishSession} onExit={onExit} />;
   if (phase === 'result') return <PracticeResult session={session} onRetry={() => { setSession(null); setPhase('setup'); }} onExit={onExit} onNavigate={onNavigate} onUserUpdate={onUserUpdate} />;
   return null;
 }
 
 /* ---------- Setup ---------- */
-function PracticeSetup({ user, config, setConfig, onStart, onExit, loading, erro }) {
+function PracticeSetup({ user, config, setConfig, onStart, onExit, loading, erro, onUpgrade }) {
+  const [trilhaAtiva, setTrilhaAtiva] = useStatePractice(null);
   const { AREAS } = window.AppData;
   const TOTAIS_POR_MODO = { rapida: 5, simulado: 80 };
 
@@ -119,6 +120,16 @@ function PracticeSetup({ user, config, setConfig, onStart, onExit, loading, erro
             </div>
           </div>
         )}
+
+        <div className="reg-section-title" style={{marginTop:32}}>Trilhas de estudo {trilhaAtiva && <span className="chip chip-amarelo">{trilhaAtiva.nome}</span>}</div>
+        <window.Premium.TrilhaPicker
+          user={user}
+          onUpgrade={onUpgrade}
+          onPick={(t) => {
+            setTrilhaAtiva(t);
+            setConfig(c => ({ ...c, areas: t.areas })); // filtra as áreas pela trilha escolhida
+          }}
+        />
 
         <div className="reg-section-title" style={{marginTop:32}}>Áreas</div>
         <div className="reg-areas">

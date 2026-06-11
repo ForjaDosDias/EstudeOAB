@@ -41,6 +41,26 @@
   --ease-out:cubic-bezier(0.16,1,0.3,1);
 }
 
+/* Tema escuro — exclusivo do plano Premium */
+body.theme-dark {
+  --bg-base:      #14162a;
+  --bg-surface:   #1d2038;
+  --text-primary: #f0ecf4;
+  --text-secondary:#b9bdd4;
+  --text-muted:   #8489a8;
+  --border-subtle:#2c3052;
+  --border-strong:#3a4070;
+  --bordo-wash:   #2c1d27;
+  --azul-wash:    #1f2340;
+  --amarelo-wash: #2c2615;
+  --green-wash:   #16281f;
+  --bege-light:   #1d2038;
+  --shadow-xs:0 1px 3px rgba(0,0,0,.4);
+  --shadow-sm:0 2px 8px rgba(0,0,0,.45);
+  --shadow-md:0 6px 24px rgba(0,0,0,.5);
+  --shadow-lg:0 16px 48px rgba(0,0,0,.55);
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #app { height: 100%; }
 body {

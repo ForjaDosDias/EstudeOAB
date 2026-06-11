@@ -4,7 +4,7 @@ const { useState: useStateShell, useEffect: useEffectShell, useCallback: useCall
 /* =========================================================
    App Shell — sidebar + topbar do app autenticado
    ========================================================= */
-function AppShell({ user, page, onNavigate, onPracticeStart, onLogout, onUserUpdate, children }) {
+function AppShell({ user, page, onNavigate, onPracticeStart, onLogout, onUserUpdate, onUpgrade, onToggleTheme, theme, children }) {
   const [showUserMenu,    setShowUserMenu]    = useStateShell(false);
   const [showProfile,     setShowProfile]     = useStateShell(false);
   const [notifications,   setNotifications]   = useStateShell([]);
@@ -65,6 +65,27 @@ function AppShell({ user, page, onNavigate, onPracticeStart, onLogout, onUserUpd
             <span>{user?.minutosDia || 30} min · 10 questões</span>
           </div>
         </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 4px' }}>
+          <window.Premium.CoinsBadge user={user} />
+          <button
+            title={user?.plan === 'premium' || user?.role === 'admin' ? 'Alternar tema' : 'Tema escuro é Premium'}
+            onClick={() => (user?.plan === 'premium' || user?.role === 'admin') ? onToggleTheme?.() : onUpgrade?.()}
+            style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}>
+            {(user?.plan === 'premium' || user?.role === 'admin') ? (theme === 'dark' ? '☀' : '🌙') : '🌙🔒'}
+          </button>
+        </div>
+
+        {user?.plan !== 'premium' && user?.role !== 'admin' && (
+          <button className="sidebar-cta" onClick={onUpgrade}
+                  style={{ background: 'linear-gradient(135deg, var(--amarelo), var(--amarelo-dark))' }}>
+            <span>✨</span>
+            <div>
+              <div>Seja Premium</div>
+              <span>stats · trilhas · sem anúncios</span>
+            </div>
+          </button>
+        )}
 
         <div
           className="sidebar-user"
