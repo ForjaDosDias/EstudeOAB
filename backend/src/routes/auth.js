@@ -3,7 +3,9 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const pool = require('../db');
 const { requireAuth, JWT_SECRET } = require('../middleware/auth');
+const { isPremium } = require('../middleware/plan');
 const { sendVerificationEmail, sendResetEmail } = require('../services/email.service');
+const { awardDailyLogin } = require('../services/coins.service');
 
 const router = express.Router();
 const SALT_ROUNDS = 12;
@@ -18,6 +20,7 @@ function makeToken(user) {
 }
 
 function publicUser(row) {
+  const premium = isPremium(row);
   return {
     id:               row.id,
     email:            row.email,
@@ -29,6 +32,10 @@ function publicUser(row) {
     dataProva:        row.data_prova,
     xp:               row.xp,
     streak:           row.streak,
+    plan:             premium ? 'premium' : 'free',
+    premiumUntil:     row.premium_until || null,
+    coins:            row.coins ?? 0,
+    adsEnabled:       !premium,
   };
 }
 
@@ -121,6 +128,13 @@ router.post('/login', async (req, res) => {
         error: 'Confirme seu e-mail antes de entrar',
       });
     }
+
+    // Moedas por login diário (idempotente por dia)
+    const ganhas = await awardDailyLogin(user.id).catch((err) => {
+      console.error('award daily login error:', err.message);
+      return 0;
+    });
+    if (ganhas > 0) user.coins = (user.coins ?? 0) + ganhas;
 
     res.json({ token: makeToken(user), user: publicUser(user) });
   } catch (err) {

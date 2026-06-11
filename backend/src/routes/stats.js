@@ -1,8 +1,12 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const { requirePremium } = require('../middleware/plan');
 
 const router = express.Router();
+
+// Estatísticas são recurso Premium (Free: sem stats)
+router.use(requirePremium);
 
 // GET /api/stats/overview
 router.get('/overview', requireAuth, async (req, res) => {

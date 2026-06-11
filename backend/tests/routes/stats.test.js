@@ -15,6 +15,35 @@ function token(userId = 1) {
   return jwt.sign({ userId, email: 'u@oab.com', role: 'user' }, JWT_SECRET);
 }
 
+// stats são recurso Premium — primeiro query de cada request é a checagem do plano
+function mockPremiumCheck(plan = 'premium') {
+  pool.query.mockResolvedValueOnce({
+    rows: [{ role: 'user', plan, premium_until: null }],
+  });
+}
+
+describe('gate Premium em /api/stats', () => {
+  it('403 PREMIUM_REQUIRED para usuário free', async () => {
+    mockPremiumCheck('free');
+    const res = await request(app)
+      .get('/api/stats/overview')
+      .set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('PREMIUM_REQUIRED');
+  });
+
+  it('403 para premium expirado', async () => {
+    pool.query.mockResolvedValueOnce({
+      rows: [{ role: 'user', plan: 'premium', premium_until: new Date(Date.now() - 86400000) }],
+    });
+    const res = await request(app)
+      .get('/api/stats/areas')
+      .set('Authorization', `Bearer ${token()}`);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('PREMIUM_REQUIRED');
+  });
+});
+
 // ── GET /api/stats/overview ───────────────────────────────────────────────────
 
 describe('GET /api/stats/overview', () => {
@@ -24,6 +53,7 @@ describe('GET /api/stats/overview', () => {
   });
 
   it('200 com zeros para usuário sem respostas', async () => {
+    mockPremiumCheck();
     pool.query
       .mockResolvedValueOnce({ rows: [{ questoes_respondidas: '0', acertos: '0', tempo_total_s: '0' }] })
       .mockResolvedValueOnce({ rows: [{ questoes_hoje: '0' }] })
@@ -42,6 +72,7 @@ describe('GET /api/stats/overview', () => {
   });
 
   it('200 com acertosPct calculado corretamente', async () => {
+    mockPremiumCheck();
     pool.query
       .mockResolvedValueOnce({ rows: [{ questoes_respondidas: '10', acertos: '8', tempo_total_s: '300' }] })
       .mockResolvedValueOnce({ rows: [{ questoes_hoje: '5' }] })
@@ -71,6 +102,7 @@ describe('GET /api/stats/areas', () => {
   });
 
   it('200 com pct calculado por área', async () => {
+    mockPremiumCheck();
     pool.query.mockResolvedValueOnce({
       rows: [
         { area: 'civil',  total: '100', respondidas: '40', acertos: '30' },
@@ -89,6 +121,7 @@ describe('GET /api/stats/areas', () => {
   });
 
   it('500 em erro do banco', async () => {
+    mockPremiumCheck();
     pool.query.mockRejectedValueOnce(new Error('falhou'));
     const res = await request(app)
       .get('/api/stats/areas')
@@ -106,6 +139,7 @@ describe('GET /api/stats/last-7-days', () => {
   });
 
   it('200 retorna array de 7 elementos', async () => {
+    mockPremiumCheck();
     pool.query.mockResolvedValueOnce({ rows: [] }); // sem dados → tudo zero
 
     const res = await request(app)
@@ -121,6 +155,7 @@ describe('GET /api/stats/last-7-days', () => {
     const hoje = new Date();
     const diaComDados = { toISOString: () => hoje.toISOString() };
 
+    mockPremiumCheck();
     pool.query.mockResolvedValueOnce({
       rows: [{ dia: diaComDados, total: '10', acertos: '7' }],
     });
