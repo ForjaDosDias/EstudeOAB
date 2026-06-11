@@ -3,6 +3,7 @@ const multer = require('multer');
 const { parse } = require('csv-parse/sync');
 const pool = require('../db');
 const { requireAdmin, requireAuth } = require('../middleware/auth');
+const { userIsPremium } = require('../middleware/plan');
 
 const router = express.Router();
 const upload = multer({
@@ -52,12 +53,27 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/questions/sortear?areas=civil,const&total=10  (#11)
+// GET /api/questions/sortear?areas=civil,const&total=10&trilha=essencial-1a-fase  (#11)
 router.get('/sortear', requireAuth, async (req, res) => {
   const total = Math.min(parseInt(req.query.total) || 10, 80);
-  const areas = req.query.areas ? req.query.areas.split(',').map(a => a.trim()) : [];
+  let areas = req.query.areas ? req.query.areas.split(',').map(a => a.trim()) : [];
 
   try {
+    // Filtro por trilha (recurso Premium): restringe o sorteio às áreas da trilha
+    if (req.query.trilha) {
+      if (!(await userIsPremium(req.user.userId))) {
+        return res.status(403).json({
+          code: 'PREMIUM_REQUIRED',
+          error: 'Filtro por trilha disponível apenas no plano Premium',
+        });
+      }
+      const trilhaRes = await pool.query('SELECT areas FROM trilhas WHERE slug = $1', [
+        req.query.trilha,
+      ]);
+      if (!trilhaRes.rows[0]) return res.status(404).json({ error: 'Trilha não encontrada' });
+      areas = trilhaRes.rows[0].areas;
+    }
+
     const areaFilter = areas.length > 0 ? 'AND area_direito = ANY($2)' : '';
     const params = areas.length > 0 ? [total, areas] : [total];
 

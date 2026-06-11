@@ -249,3 +249,63 @@ describe('POST /api/questions/upload', () => {
     expect(mockClient.release).toHaveBeenCalled();
   });
 });
+
+// ── GET /api/questions/sortear com filtro de trilha ───────────────────────────
+
+describe('GET /api/questions/sortear?trilha=', () => {
+  function userToken(userId = 1) {
+    return jwt.sign({ userId, email: 'u@oab.com', role: 'user' }, JWT_SECRET);
+  }
+
+  it('401 sem token', async () => {
+    const res = await request(app).get('/api/questions/sortear?trilha=essencial-1a-fase');
+    expect(res.status).toBe(401);
+  });
+
+  it('403 PREMIUM_REQUIRED quando free usa filtro de trilha', async () => {
+    pool.query.mockResolvedValueOnce({
+      rows: [{ role: 'user', plan: 'free', premium_until: null }],
+    });
+    const res = await request(app)
+      .get('/api/questions/sortear?trilha=essencial-1a-fase')
+      .set('Authorization', `Bearer ${userToken()}`);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('PREMIUM_REQUIRED');
+  });
+
+  it('404 quando a trilha não existe', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ role: 'user', plan: 'premium', premium_until: null }] })
+      .mockResolvedValueOnce({ rows: [] }); // SELECT trilhas
+    const res = await request(app)
+      .get('/api/questions/sortear?trilha=inexistente')
+      .set('Authorization', `Bearer ${userToken()}`);
+    expect(res.status).toBe(404);
+  });
+
+  it('200 sorteia usando as áreas da trilha', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ role: 'user', plan: 'premium', premium_until: null }] })
+      .mockResolvedValueOnce({ rows: [{ areas: ['penal'] }] })
+      .mockResolvedValueOnce({ rows: [{ id: 3, enunciado: 'Q', area_direito: 'penal' }] });
+
+    const res = await request(app)
+      .get('/api/questions/sortear?trilha=penalista&total=5')
+      .set('Authorization', `Bearer ${userToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.questoes).toHaveLength(1);
+
+    const sorteio = pool.query.mock.calls[2];
+    expect(sorteio[1]).toEqual([5, ['penal']]);
+  });
+
+  it('200 sem trilha continua sorteando normalmente', async () => {
+    pool.query.mockResolvedValueOnce({ rows: [{ id: 4, enunciado: 'Q', area_direito: 'civil' }] });
+    const res = await request(app)
+      .get('/api/questions/sortear?total=3')
+      .set('Authorization', `Bearer ${userToken()}`);
+    expect(res.status).toBe(200);
+    expect(res.body.questoes).toHaveLength(1);
+  });
+});
