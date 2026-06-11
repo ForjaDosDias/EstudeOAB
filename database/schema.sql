@@ -184,3 +184,60 @@ CREATE TABLE IF NOT EXISTS email_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_email_tokens_user   ON email_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_email_tokens_lookup ON email_tokens(type, expires_at, used_at, reengagement_sent_at);
+
+-- ── Freemium: plano do usuário ─────────────────────────────────────────────────
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS plan          VARCHAR(20) NOT NULL DEFAULT 'free';  -- 'free' | 'premium'
+ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_until TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS coins         INTEGER     NOT NULL DEFAULT 0;
+
+-- ── Pagamentos (Mercado Pago) ──────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS payments (
+  id             SERIAL PRIMARY KEY,
+  user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  mp_payment_id  VARCHAR(64) UNIQUE,            -- id do pagamento no Mercado Pago
+  metodo         VARCHAR(20) NOT NULL,          -- 'pix' | 'cartao'
+  valor_centavos INTEGER NOT NULL,
+  status         VARCHAR(30) NOT NULL DEFAULT 'pending',  -- pending | approved | rejected | cancelled | refunded
+  plano          VARCHAR(30) NOT NULL DEFAULT 'premium_mensal',
+  ativado_em     TIMESTAMPTZ,                   -- quando o premium foi liberado por este pagamento
+  criado_em      TIMESTAMPTZ DEFAULT NOW(),
+  atualizado_em  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_payments_user   ON payments(user_id, criado_em DESC);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+
+-- ── Sistema de moedas ──────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS coin_transactions (
+  id         SERIAL PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tipo       VARCHAR(30) NOT NULL,   -- 'login_diario' | 'cinco_questoes' | 'compra' | 'comentario'
+  quantidade INTEGER NOT NULL,
+  referencia VARCHAR(100) NOT NULL,  -- chave de idempotência (ex: data, payment id, comment id)
+  criado_em  TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, tipo, referencia)
+);
+
+CREATE INDEX IF NOT EXISTS idx_coin_tx_user ON coin_transactions(user_id, criado_em DESC);
+
+-- ── Trilhas de estudo ──────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS trilhas (
+  id        SERIAL PRIMARY KEY,
+  slug      VARCHAR(50) UNIQUE NOT NULL,
+  nome      VARCHAR(200) NOT NULL,
+  descricao TEXT,
+  areas     TEXT[] NOT NULL,
+  ordem     INTEGER NOT NULL DEFAULT 0
+);
+
+INSERT INTO trilhas (slug, nome, descricao, areas, ordem) VALUES
+  ('essencial-1a-fase', 'Essencial 1ª Fase',     'As três áreas de maior incidência no exame.',          ARRAY['etica','civil','const'],   1),
+  ('penalista',         'Trilha Penalista',      'Foco em Direito Penal e Processo Penal.',               ARRAY['penal'],                   2),
+  ('civilista',         'Trilha Civilista',      'Foco em Direito Civil e Processo Civil.',               ARRAY['civil'],                   3),
+  ('publicista',        'Trilha Publicista',     'Constitucional, Administrativo e Tributário.',          ARRAY['const','adm','trib'],      4),
+  ('trabalhista',       'Trilha Trabalhista',    'Direito e Processo do Trabalho.',                       ARRAY['trabalho'],                5)
+ON CONFLICT (slug) DO NOTHING;
