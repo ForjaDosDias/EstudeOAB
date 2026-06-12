@@ -13,7 +13,6 @@ function App() {
   const [toast, setToast]               = useStateApp(null);
   const [urlToken, setUrlToken]         = useStateApp(null);
   const [emailPending, setEmailPending] = useStateApp({ email: '', tokenExpired: false });
-  const [showUpgrade, setShowUpgrade]   = useStateApp(false);
   const [adWatched, setAdWatched]       = useStateApp(false);
   const [theme, setTheme]               = useStateApp(localStorage.getItem('oab_theme') || 'light');
 
@@ -37,9 +36,11 @@ function App() {
       .catch(() => {});
   };
 
+  const goPremium = () => setPage('premium');
+
   const handleUpgraded = () => {
-    setShowUpgrade(false);
     refreshUser();
+    setPage('dashboard');
     flashToast({ kind: 'xp', title: 'Bem-vindo ao Premium! ✨', body: 'Stats, trilhas e tema desbloqueados — e zero anúncios.' });
   };
 
@@ -204,14 +205,15 @@ function App() {
         onPracticeStart={handlePracticeStart}
         onLogout={doLogout}
         onUserUpdate={setUser}
-        onUpgrade={() => setShowUpgrade(true)}
+        onUpgrade={goPremium}
         onToggleTheme={toggleTheme}
         theme={theme}
       >
         {page === 'dashboard' && <window.Shell.Dashboard user={user} onPracticeStart={handlePracticeStart} onNavigate={handleNavigate} />}
+        {page === 'premium'   && <window.Premium.PremiumPage user={user} onUpgraded={handleUpgraded} onBack={() => setPage('dashboard')} />}
         {page === 'practice'  && (!isPremium && !adWatched
-          ? <window.Premium.AdVideoGate onDone={() => setAdWatched(true)} onUpgrade={() => setShowUpgrade(true)} />
-          : <window.Practice.PracticeFlow user={user} token={token} onUserUpdate={setUser} onExit={() => setPage('dashboard')} onNavigate={handleNavigate} onUpgrade={() => setShowUpgrade(true)} />)}
+          ? <window.Premium.AdVideoGate onDone={() => setAdWatched(true)} onUpgrade={goPremium} />
+          : <window.Practice.PracticeFlow user={user} token={token} onUserUpdate={setUser} onExit={() => setPage('dashboard')} onNavigate={handleNavigate} onUpgrade={goPremium} />)}
         {(page === 'stats' || page === 'review') && (isPremium
           ? <window.Stats.StatsPage onNavigate={handleNavigate} />
           : (
@@ -221,7 +223,7 @@ function App() {
               <div style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
                 Acompanhe sua evolução por área, streak e plano de estudos personalizado.
               </div>
-              <button className="btn-primary" onClick={() => setShowUpgrade(true)}>Desbloquear estatísticas</button>
+              <button className="btn-primary" onClick={goPremium}>Desbloquear estatísticas</button>
             </div>
           ))}
         {page === 'admin'      && user?.role === 'admin' && <window.Admin.AdminPage token={token} onNavigate={handleNavigate} />}
@@ -233,13 +235,6 @@ function App() {
           </div>
         )}
       </window.Shell.AppShell>
-
-      {showUpgrade && (
-        <window.Premium.UpgradeModal
-          onClose={() => setShowUpgrade(false)}
-          onUpgraded={handleUpgraded}
-        />
-      )}
 
       {toast && (
         <div className="toast-stack">

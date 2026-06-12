@@ -1,9 +1,16 @@
 /* global React */
 const { useState: useStatePremium, useEffect: useEffectPremium, useRef: useRefPremium } = React;
 
-// ── Modal de upgrade Premium (Pix + Cartão via Mercado Pago) ──────────────────
+// ── Página de upgrade Premium (Pix + Cartão via Mercado Pago) ─────────────────
 
-function UpgradeModal({ onClose, onUpgraded }) {
+const BENEFICIOS_PREMIUM = [
+  { icon: '📊', titulo: 'Estatísticas completas', desc: 'Evolução por área, streak e plano de estudos personalizado.' },
+  { icon: '🛤️', titulo: 'Trilhas de estudo', desc: 'Sequências guiadas pelas áreas que mais caem na prova.' },
+  { icon: '🌙', titulo: 'Tema escuro', desc: 'Estude à noite sem cansar a vista.' },
+  { icon: '🚫', titulo: 'Zero anúncios', desc: 'Nenhuma interrupção entre você e a aprovação.' },
+];
+
+function PremiumPage({ user, onUpgraded, onBack }) {
   const [config, setConfig]   = useStatePremium(null);
   const [tab, setTab]         = useStatePremium('pix'); // 'pix' | 'cartao'
   const [pix, setPix]         = useStatePremium(null);  // { paymentId, qrCode, qrCodeBase64 }
@@ -11,6 +18,8 @@ function UpgradeModal({ onClose, onUpgraded }) {
   const [erro, setErro]       = useStatePremium(null);
   const [copiado, setCopiado] = useStatePremium(false);
   const pollRef = useRefPremium(null);
+
+  const isPremium = user?.plan === 'premium' || user?.role === 'admin';
 
   useEffectPremium(() => {
     window.apiFetch('/payments/config').then(setConfig).catch(() => {});
@@ -48,49 +57,84 @@ function UpgradeModal({ onClose, onUpgraded }) {
     });
   };
 
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal upgrade-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
-        <button className="modal-close" onClick={onClose}>✕</button>
-        <h2 style={{ fontFamily: 'Playfair Display', marginBottom: 4 }}>Seja Premium</h2>
-        <p style={{ color: 'var(--text-muted)', marginBottom: 16 }}>
-          Estatísticas completas, trilhas de estudo, temas e zero anúncios — {preco}/mês.
+  if (isPremium) {
+    return (
+      <div style={{ maxWidth: 560, margin: '0 auto', padding: '64px 24px', textAlign: 'center' }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>✨</div>
+        <h1 style={{ fontFamily: 'Playfair Display', marginBottom: 8 }}>Você já é Premium</h1>
+        <p style={{ color: 'var(--text-muted)', marginBottom: 24 }}>
+          Estatísticas, trilhas, tema escuro e zero anúncios estão liberados na sua conta.
         </p>
+        <button className="btn-primary" onClick={onBack}>Voltar ao painel</button>
+      </div>
+    );
+  }
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          <button className={tab === 'pix' ? 'btn-primary' : 'btn-secondary'} onClick={() => setTab('pix')}>Pix</button>
-          <button className={tab === 'cartao' ? 'btn-primary' : 'btn-secondary'} onClick={() => setTab('cartao')}>Cartão</button>
+  return (
+    <div style={{ maxWidth: 960, margin: '0 auto', padding: '32px 24px' }}>
+      <button className="btn-secondary" onClick={onBack} style={{ marginBottom: 20 }}>← Voltar</button>
+
+      <div style={{ textAlign: 'center', marginBottom: 32 }}>
+        <h1 style={{ fontFamily: 'Playfair Display', marginBottom: 6 }}>Seja Premium</h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: 15 }}>
+          Tudo que o plano gratuito tem, mais as ferramentas que aceleram sua aprovação — <strong>{preco}/mês</strong>.
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 340px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {BENEFICIOS_PREMIUM.map((b) => (
+            <div key={b.titulo} className="card" style={{ display: 'flex', gap: 14, padding: 16, alignItems: 'flex-start' }}>
+              <div style={{ fontSize: 24 }}>{b.icon}</div>
+              <div>
+                <div style={{ fontWeight: 700 }}>{b.titulo}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{b.desc}</div>
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+            Pagamento único — 30 dias de acesso, renove quando quiser. Sem fidelidade.
+          </div>
         </div>
 
-        {erro && <div className="toast toast-error" style={{ marginBottom: 12 }}>{erro}</div>}
+        <div className="card" style={{ flex: '1 1 340px', padding: 24 }}>
+          <div style={{ fontWeight: 700, marginBottom: 14 }}>Forma de pagamento</div>
 
-        {tab === 'pix' && !pix && (
-          <button className="btn-primary" disabled={busy} onClick={iniciarPix} style={{ width: '100%' }}>
-            {busy ? 'Gerando Pix…' : `Pagar ${preco} com Pix`}
-          </button>
-        )}
-
-        {tab === 'pix' && pix && (
-          <div style={{ textAlign: 'center' }}>
-            {pix.qrCodeBase64 && (
-              <img
-                src={`data:image/png;base64,${pix.qrCodeBase64}`}
-                alt="QR Code Pix"
-                style={{ width: 220, height: 220, margin: '0 auto 12px', display: 'block' }}
-              />
-            )}
-            <button className="btn-secondary" onClick={copiarPix} style={{ width: '100%', marginBottom: 8 }}>
-              {copiado ? '✓ Copiado!' : 'Copiar código Pix copia-e-cola'}
-            </button>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-              Aguardando pagamento… a tela atualiza sozinha após a confirmação.
-            </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <button className={tab === 'pix' ? 'btn-primary' : 'btn-secondary'} onClick={() => setTab('pix')}>Pix</button>
+            <button className={tab === 'cartao' ? 'btn-primary' : 'btn-secondary'} onClick={() => setTab('cartao')}>Cartão</button>
           </div>
-        )}
 
-        {tab === 'cartao' && (
-          <CardForm config={config} onErro={setErro} onAprovado={onUpgraded} />
-        )}
+          {erro && <div className="toast toast-error" style={{ marginBottom: 12 }}>{erro}</div>}
+
+          {tab === 'pix' && !pix && (
+            <button className="btn-primary" disabled={busy} onClick={iniciarPix} style={{ width: '100%' }}>
+              {busy ? 'Gerando Pix…' : `Pagar ${preco} com Pix`}
+            </button>
+          )}
+
+          {tab === 'pix' && pix && (
+            <div style={{ textAlign: 'center' }}>
+              {pix.qrCodeBase64 && (
+                <img
+                  src={`data:image/png;base64,${pix.qrCodeBase64}`}
+                  alt="QR Code Pix"
+                  style={{ width: 220, height: 220, margin: '0 auto 12px', display: 'block' }}
+                />
+              )}
+              <button className="btn-secondary" onClick={copiarPix} style={{ width: '100%', marginBottom: 8 }}>
+                {copiado ? '✓ Copiado!' : 'Copiar código Pix copia-e-cola'}
+              </button>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                Aguardando pagamento… a tela atualiza sozinha após a confirmação.
+              </div>
+            </div>
+          )}
+
+          {tab === 'cartao' && (
+            <CardForm config={config} onErro={setErro} onAprovado={onUpgraded} />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -303,4 +347,4 @@ function TrilhaPicker({ user, onPick, onUpgrade }) {
   );
 }
 
-window.Premium = { UpgradeModal, AdVideoGate, CoinsBadge, TrilhaPicker };
+window.Premium = { PremiumPage, AdVideoGate, CoinsBadge, TrilhaPicker };
