@@ -241,3 +241,6 @@ INSERT INTO trilhas (slug, nome, descricao, areas, ordem) VALUES
   ('publicista',        'Trilha Publicista',     'Constitucional, Administrativo e Tributário.',          ARRAY['const','adm','trib'],      4),
   ('trabalhista',       'Trilha Trabalhista',    'Direito e Processo do Trabalho.',                       ARRAY['trabalho'],                5)
 ON CONFLICT (slug) DO NOTHING;
+
+-- Índice de apoio à trilha com checkpoints (mapa por área × dificuldade)
+CREATE INDEX IF NOT EXISTS idx_questions_area_dif ON questions(area_direito, dificuldade);
