@@ -214,6 +214,7 @@ function App() {
         {page === 'practice'  && (!isPremium && !adWatched
           ? <window.Premium.AdVideoGate onDone={() => setAdWatched(true)} onUpgrade={goPremium} />
           : <window.Practice.PracticeFlow user={user} token={token} onUserUpdate={setUser} onExit={() => setPage('dashboard')} onNavigate={handleNavigate} onUpgrade={goPremium} />)}
+        {page === 'trilha'    && <window.Trilha.TrilhaPage user={user} onExit={() => setPage('dashboard')} onNavigate={handleNavigate} onUpgrade={goPremium} onUserUpdate={setUser} />}
         {(page === 'stats' || page === 'review') && (isPremium
           ? <window.Stats.StatsPage onNavigate={handleNavigate} />
           : (

@@ -528,4 +528,6 @@ function PracticeResult({ session, onRetry, onExit, onNavigate, onUserUpdate }) 
   );
 }
 
-window.Practice = { PracticeFlow };
+// PracticeRunner/PracticeResult/formatarQuestao são reaproveitados pela trilha
+// (trilha.jsx) para rodar um checkpoint pelo mesmo fluxo de respostas.
+window.Practice = { PracticeFlow, PracticeRunner, PracticeResult, formatarQuestao };

@@ -30,6 +30,7 @@ function AppShell({ user, page, onNavigate, onPracticeStart, onLogout, onUserUpd
   const navItems = [
     { id: 'dashboard',  label: 'Início',       icon: '◆' },
     { id: 'practice',   label: 'Praticar',     icon: '▶' },
+    { id: 'trilha',     label: 'Trilha',       icon: '🛤️' },
     { id: 'stats',      label: 'Estatísticas', icon: '◇' },
     ...(user?.role === 'admin' ? [
       { id: 'admin', label: 'Admin', icon: '⚙' },
