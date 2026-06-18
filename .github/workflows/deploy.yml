@@ -1,0 +1,36 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-estudeoab
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: [self-hosted, vps-prod]
+    env:
+      # EstudeOAB tem o compose no próprio repo: código e compose no mesmo diretório.
+      SRC_DIR: /home/victor/Projetos/Publicado/EstudeOAB
+      COMPOSE_DIR: /home/victor/Projetos/Publicado/EstudeOAB
+      REPO: ForjaDosDias/EstudeOAB
+    steps:
+      - name: Atualizar código de produção
+        run: |
+          cd "$SRC_DIR"
+          git fetch "https://x-access-token:${{ github.token }}@github.com/${REPO}.git" main
+          git reset --hard FETCH_HEAD
+
+      - name: Rebuild e subir containers (aguarda ficar healthy)
+        run: |
+          cd "$COMPOSE_DIR"
+          docker compose up -d --build --wait --wait-timeout 180
+
+      - name: Logs em caso de falha
+        if: failure()
+        run: |
+          cd "$COMPOSE_DIR"
+          docker compose logs --tail=80 || true
