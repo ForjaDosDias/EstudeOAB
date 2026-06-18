@@ -1,0 +1,11 @@
+{
+  "name": "estudeoab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint frontend/*.jsx"
+  },
+  "devDependencies": {
+    "eslint": "^9.26.0"
+  }
+}

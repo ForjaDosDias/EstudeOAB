@@ -227,4 +227,22 @@ describe('POST /api/payments/webhook', () => {
     expect(updateUsers).toBeDefined();
     expect(updateUsers[1][0]).toBe(7);
   });
+
+  it('200 e sincroniza em notificação de order (Orders API)', async () => {
+    mp.getPayment.mockResolvedValueOnce({ id: 'ORDTST555', status: 'approved' });
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ id: 4, status: 'approved' }] })             // UPDATE payments
+      .mockResolvedValueOnce({ rows: [{ user_id: 8, mp_payment_id: 'ORDTST555' }] })// ativação
+      .mockResolvedValueOnce({ rows: [] })                                          // UPDATE users
+      .mockResolvedValueOnce({ rows: [{ id: 10 }] })                                // INSERT coin
+      .mockResolvedValueOnce({ rows: [] });                                         // UPDATE coins
+
+    const res = await request(app)
+      .post('/api/payments/webhook')
+      .send({ type: 'order', data: { id: 'ORDTST555' } });
+
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mp.getPayment).toHaveBeenCalledWith('ORDTST555');
+  });
 });

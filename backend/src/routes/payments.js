@@ -171,7 +171,8 @@ router.post('/webhook', async (req, res) => {
 
   const mpPaymentId = req.body?.data?.id;
   const type = req.body?.type || req.body?.topic;
-  if (type !== 'payment' || !mpPaymentId) return;
+  // 'order'/'orders_v2': notificações da Orders API; 'payment' mantido por compatibilidade
+  if (!['payment', 'order', 'orders_v2'].includes(type) || !mpPaymentId) return;
 
   try {
     await syncPaymentStatus(mpPaymentId);

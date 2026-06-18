@@ -21,3 +21,7 @@ Thumbs.db
 
 # Docker volumes locais
 postgres_data/
+
+# Dados de exame (binários grandes — não versionar)
+*.pdf
+OAB_*.csv
