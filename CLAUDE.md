@@ -14,7 +14,7 @@
 
 ## Commits
 
-- **Toda alteração requer um commit descritivo na branch `main`.** Use mensagens no formato:
+- **Toda alteração requer um commit descritivo numa branch `feature/*` (nunca direto na `main`).** Use mensagens no formato:
   ```
   tipo: resumo curto do que foi feito
 
@@ -29,12 +29,20 @@
 
 ## Push e integração
 
-- **A cada 2 commits, faça push para o remoto e garanta que todos os testes passam antes:**
+Fluxo da esteira CI/CD: **`feature/*` → `dev` → `main`** (a `main` é protegida; não há push direto).
+
+- Rode os testes localmente antes de cada push — nenhum push com teste falhando:
   ```bash
-  docker exec estudeoab-backend-1 npm test && git push
+  docker exec estudeoab-backend-1 npm test
   ```
-- Nunca faça push se algum teste estiver falhando.
-- O push vai sempre para `origin main`.
+- Trabalhe sempre a partir de `dev` e abra PR para `dev`:
+  ```bash
+  git checkout -b feature/minha-mudanca dev
+  git push -u origin feature/minha-mudanca
+  gh pr create --base dev        # auto-merge quando o check `test` passar
+  ```
+- **Release:** PR `dev` → `main` exige guard (origem = `dev`) + 1 aprovação humana e dispara o
+  deploy automático na VPS (self-hosted runner). Nunca dar push direto na `main` (bloqueado pelo ruleset).
 
 ## Issues e rastreamento
 

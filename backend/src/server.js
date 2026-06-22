@@ -67,6 +67,7 @@ async function runReengagementJob() {
       FROM email_tokens et
       JOIN users u ON u.id = et.user_id
       WHERE et.type = 'verify_email'
+        AND u.email_verified = FALSE
         AND et.used_at IS NULL
         AND et.expires_at < NOW()
         AND et.expires_at > NOW() - interval '48 hours'
@@ -75,8 +76,8 @@ async function runReengagementJob() {
     for (const row of rows) {
       try {
         const newToken = await pool.query(
-          `INSERT INTO email_tokens (user_id, type, expires_at)
-           VALUES ($1, 'verify_email', NOW() + interval '48 hours')
+          `INSERT INTO email_tokens (user_id, type, expires_at, reengagement_sent_at)
+           VALUES ($1, 'verify_email', NOW() + interval '48 hours', NOW())
            RETURNING token`,
           [row.user_id]
         );
