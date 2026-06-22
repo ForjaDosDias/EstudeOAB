@@ -159,7 +159,11 @@ router.get('/verify-email', async (req, res) => {
     if (row.used_at) return res.status(400).json({ error: 'Token já utilizado', code: 'TOKEN_USED' });
     if (row.expires_at < new Date()) return res.status(400).json({ error: 'Token expirado', code: 'TOKEN_EXPIRED' });
 
-    await pool.query('UPDATE email_tokens SET used_at = NOW() WHERE id = $1', [row.id]);
+    await pool.query(
+      `UPDATE email_tokens SET used_at = NOW()
+       WHERE user_id = $1 AND type = 'verify_email' AND used_at IS NULL`,
+      [row.user_id]
+    );
     await pool.query('UPDATE users SET email_verified = TRUE WHERE id = $1', [row.user_id]);
 
     res.json({ ok: true });

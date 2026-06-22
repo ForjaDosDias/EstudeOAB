@@ -225,6 +225,24 @@ describe('GET /api/auth/verify-email', () => {
     expect(res.status).toBe(200);
     expect(res.body.ok).toBe(true);
   });
+
+  it('invalida todos os tokens verify_email pendentes do usuário (não só o clicado)', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ id: 7, user_id: 42, expires_at: futureDate, used_at: null }] })
+      .mockResolvedValueOnce({ rows: [] }) // UPDATE email_tokens
+      .mockResolvedValueOnce({ rows: [] }); // UPDATE users
+
+    await request(app).get('/api/auth/verify-email?token=valido');
+
+    const tokenUpdate = pool.query.mock.calls.find(
+      ([sql]) => /UPDATE email_tokens SET used_at/i.test(sql)
+    );
+    expect(tokenUpdate).toBeDefined();
+    // filtra por user_id + type, não pelo id do token clicado
+    expect(tokenUpdate[0]).toMatch(/user_id = \$1/i);
+    expect(tokenUpdate[0]).toMatch(/type = 'verify_email'/i);
+    expect(tokenUpdate[1]).toEqual([42]);
+  });
 });
 
 // ── /resend-verification ──────────────────────────────────────────────────────
