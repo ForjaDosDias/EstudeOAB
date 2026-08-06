@@ -244,3 +244,113 @@ ON CONFLICT (slug) DO NOTHING;
 
 -- Índice de apoio à trilha com checkpoints (mapa por área × dificuldade)
 CREATE INDEX IF NOT EXISTS idx_questions_area_dif ON questions(area_direito, dificuldade);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Taxonomia de temas (2026-08-06)
+--
+-- A coluna legada `questions.tema` é texto livre e tem ~236 valores distintos
+-- para 238 questões: é um rótulo por questão, não agrupa nada. A trilha por
+-- incidência precisa de um catálogo fechado, que é esta tabela. A coluna antiga
+-- fica intacta para preservar o histórico da classificação original.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS temas (
+  id         SERIAL PRIMARY KEY,
+  slug       VARCHAR(160) UNIQUE NOT NULL,
+  nome       VARCHAR(200) NOT NULL,
+  disciplina VARCHAR(100) NOT NULL,   -- espelha questions.area_direito
+  ativo      BOOLEAN DEFAULT TRUE
+);
+
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS tema_id INTEGER REFERENCES temas(id);
+CREATE INDEX IF NOT EXISTS idx_questions_tema ON questions(tema_id);
+INSERT INTO temas (slug, nome, disciplina) VALUES
+  ('penal-crimes-contra-a-pessoa', 'Crimes contra a pessoa', 'penal'),
+  ('const-organizacao-do-estado-federacao', 'Organização do Estado / Federação', 'const'),
+  ('const-direito-internacional-privado', 'Direito Internacional Privado', 'const'),
+  ('const-direito-eleitoral', 'Direito eleitoral', 'const'),
+  ('trabalho-rescisao-e-verbas-rescisorias', 'Rescisão e verbas rescisórias', 'trabalho'),
+  ('outros-filosofia-e-teoria-geral-do-direito', 'Filosofia e teoria geral do direito', 'outros'),
+  ('trib-e-proc-trib-especies-tributarias', 'Espécies tributárias', 'trib e proc trib'),
+  ('adm-pad-e-servidores', 'PAD e servidores', 'adm'),
+  ('proc-civil-proc-civil-execucao-e-cumprimento', 'Proc. Civil — execução e cumprimento', 'proc civil'),
+  ('outros-cdc-responsabilidade-do-fornecedor', 'CDC — responsabilidade do fornecedor', 'outros'),
+  ('penal-crimes-contra-o-patrimonio', 'Crimes contra o patrimônio', 'penal'),
+  ('trabalho-previdencia-social-rgps', 'Previdência social — RGPS', 'trabalho'),
+  ('trib-e-proc-trib-credito-tributario-lancamento-e-extincao', 'Crédito tributário — lançamento e extinção', 'trib e proc trib'),
+  ('adm-ato-administrativo', 'Ato administrativo', 'adm'),
+  ('adm-licitacao-e-contratos', 'Licitação e contratos', 'adm'),
+  ('proc-civil-proc-civil-competencia-e-juizados', 'Proc. Civil — competência e Juizados', 'proc civil'),
+  ('civil-sucessoes', 'Sucessões', 'civil'),
+  ('human-direitos-humanos-povos-indigenas-e-minorias', 'Direitos Humanos — povos indígenas e minorias', 'human'),
+  ('human-direitos-humanos-tratados-e-incorporacao', 'Direitos Humanos — tratados e incorporação', 'human'),
+  ('empresarial-tipos-societarios', 'Tipos societários', 'empresarial'),
+  ('proc-penal-proc-penal-prisao-e-cautelares', 'Proc. Penal — prisão e cautelares', 'proc penal'),
+  ('proc-penal-proc-penal-provas', 'Proc. Penal — provas', 'proc penal'),
+  ('trabalho-jornada-e-horas-extras', 'Jornada e horas extras', 'trabalho'),
+  ('proc-trab-proc-trabalho-execucao', 'Proc. Trabalho — execução', 'proc trab'),
+  ('etica-sigilo-profissional', 'Sigilo profissional', 'etica'),
+  ('outros-licenciamento-ambiental', 'Licenciamento ambiental', 'outros'),
+  ('civil-contratos', 'Contratos', 'civil'),
+  ('civil-direitos-reais', 'Direitos reais', 'civil'),
+  ('civil-familia', 'Família', 'civil'),
+  ('proc-civil-proc-civil-procedimentos-especiais', 'Proc. Civil — procedimentos especiais', 'proc civil'),
+  ('civil-responsabilidade-civil-e-obrigacoes', 'Responsabilidade civil e obrigações', 'civil'),
+  ('outros-eca-ato-infracional', 'ECA — ato infracional', 'outros'),
+  ('outros-eca-familia-e-protecao', 'ECA — família e proteção', 'outros'),
+  ('const-controle-externo-tcu', 'Controle externo / TCU', 'const'),
+  ('empresarial-empresario-e-mei', 'Empresário e MEI', 'empresarial'),
+  ('trabalho-contratos-especiais-de-trabalho', 'Contratos especiais de trabalho', 'trabalho'),
+  ('proc-trab-proc-trabalho-competencia', 'Proc. Trabalho — competência', 'proc trab'),
+  ('proc-trab-proc-trabalho-instrucao-e-provas', 'Proc. Trabalho — instrução e provas', 'proc trab'),
+  ('trib-e-proc-trib-lrf-limites-de-gasto-e-responsabilidade-fiscal', 'LRF — limites de gasto e responsabilidade fiscal', 'trib e proc trib'),
+  ('trib-e-proc-trib-orcamento-publico-loa-e-ldo', 'Orçamento público — LOA e LDO', 'trib e proc trib'),
+  ('trib-e-proc-trib-principios-tributarios-anterioridade-e-legalidade', 'Princípios tributários — anterioridade e legalidade', 'trib e proc trib'),
+  ('etica-deveres-e-vedacoes-do-advogado', 'Deveres e vedações do advogado', 'etica'),
+  ('etica-estagio-e-inscricao-na-oab', 'Estágio e inscrição na OAB', 'etica'),
+  ('etica-honorarios-advocaticios', 'Honorários advocatícios', 'etica'),
+  ('etica-incompatibilidades-e-impedimentos', 'Incompatibilidades e impedimentos', 'etica'),
+  ('etica-prerrogativas-do-advogado', 'Prerrogativas do advogado', 'etica'),
+  ('etica-processo-disciplinar-oab', 'Processo disciplinar OAB', 'etica'),
+  ('etica-publicidade-e-captacao-de-clientela', 'Publicidade e captação de clientela', 'etica'),
+  ('adm-improbidade-administrativa', 'Improbidade administrativa', 'adm'),
+  ('outros-areas-protegidas-e-instrumentos', 'Áreas protegidas e instrumentos', 'outros'),
+  ('outros-lgpd-protecao-de-dados', 'LGPD — proteção de dados', 'outros'),
+  ('const-controle-de-constitucionalidade', 'Controle de constitucionalidade', 'const'),
+  ('const-direitos-fundamentais-aplicacao-e-restricoes', 'Direitos fundamentais — aplicação e restrições', 'const'),
+  ('empresarial-falencia-e-recuperacao-judicial', 'Falência e recuperação judicial', 'empresarial'),
+  ('empresarial-titulos-de-credito-e-garantias', 'Títulos de crédito e garantias', 'empresarial'),
+  ('proc-penal-proc-penal-acao-penal', 'Proc. Penal — ação penal', 'proc penal'),
+  ('proc-penal-proc-penal-recursos-penais', 'Proc. Penal — recursos penais', 'proc penal'),
+  ('trabalho-empregado-domestico', 'Empregado doméstico', 'trabalho'),
+  ('proc-trab-proc-trabalho-sentenca', 'Proc. Trabalho — sentença', 'proc trab'),
+  ('trib-e-proc-trib-competencia-tributaria-e-imunidades', 'Competência tributária e imunidades', 'trib e proc trib'),
+  ('proc-civil-proc-civil-honorarios', 'Proc. Civil — honorários', 'proc civil'),
+  ('proc-civil-proc-civil-recursos', 'Proc. Civil — recursos', 'proc civil'),
+  ('proc-civil-proc-civil-tutela-provisoria', 'Proc. Civil — tutela provisória', 'proc civil'),
+  ('outros-superendividamento-lei-14-181', 'Superendividamento — Lei 14.181', 'outros'),
+  ('penal-aplicacao-da-lei-penal', 'Aplicação da lei penal', 'penal'),
+  ('penal-concurso-de-pessoas', 'Concurso de pessoas', 'penal'),
+  ('penal-crimes-contra-a-honra-e-outros', 'Crimes contra a honra e outros', 'penal'),
+  ('penal-execucao-penal-progressao-de-regime', 'Execução penal — progressão de regime', 'penal'),
+  ('proc-penal-proc-penal-tribunal-do-juri', 'Proc. Penal — Tribunal do Júri', 'proc penal'),
+  ('proc-trab-proc-trabalho-recursos', 'Proc. Trabalho — recursos', 'proc trab'),
+  ('trabalho-remuneracao-e-salario', 'Remuneração e salário', 'trabalho'),
+  ('adm-intervencao-e-desapropriacao', 'Intervenção e desapropriação', 'adm'),
+  ('outros-responsabilidade-e-dano-ambiental', 'Responsabilidade e dano ambiental', 'outros'),
+  ('civil-negocios-juridicos-e-vicios', 'Negócios jurídicos e vícios', 'civil'),
+  ('proc-civil-proc-civil-acao-civil-publica', 'Proc. Civil — ação civil pública', 'proc civil'),
+  ('empresarial-propriedade-industrial', 'Propriedade industrial', 'empresarial'),
+  ('penal-lei-de-drogas', 'Lei de drogas', 'penal'),
+  ('trabalho-estabilidade-e-garantias', 'Estabilidade e garantias', 'trabalho'),
+  ('proc-trab-proc-trabalho-dissidio-coletivo', 'Proc. Trabalho — dissídio coletivo', 'proc trab')
+ON CONFLICT (slug) DO NOTHING;
+
+-- Correção das áreas das trilhas (2026-08-06)
+-- O seed original usava 'trib', que não existe em questions.area_direito (o valor
+-- real é 'trib e proc trib'), e omitia os ramos processuais — a Trilha Publicista
+-- prometia Tributário e devolvia zero questões dessa matéria.
+UPDATE trilhas SET areas = ARRAY['penal','proc penal']                          WHERE slug = 'penalista';
+UPDATE trilhas SET areas = ARRAY['civil','proc civil']                          WHERE slug = 'civilista';
+UPDATE trilhas SET areas = ARRAY['trabalho','proc trab']                        WHERE slug = 'trabalhista';
+UPDATE trilhas SET areas = ARRAY['const','adm','trib e proc trib']              WHERE slug = 'publicista';
+UPDATE trilhas SET areas = ARRAY['etica','civil','proc civil','const']          WHERE slug = 'essencial-1a-fase';
