@@ -310,27 +310,14 @@ function CoinsBadge({ user }) {
 
 // ── Seletor de trilhas (Premium) ──────────────────────────────────────────────
 
-function TrilhaPicker({ user, onPick, onUpgrade }) {
+// A trilha deixou de ser Premium em 06/08/2026: a única trava passou a ser o
+// progresso do próprio aluno. Premium segue valendo para stats, simulados e tema escuro.
+function TrilhaPicker({ user, onPick }) {
   const [trilhas, setTrilhas] = useStatePremium(null);
-  const isPremium = user?.plan === 'premium' || user?.role === 'admin';
 
   useEffectPremium(() => {
-    if (!isPremium) return;
     window.apiFetch('/trilhas').then((d) => setTrilhas(d.trilhas)).catch(() => setTrilhas([]));
-  }, [isPremium]);
-
-  if (!isPremium) {
-    return (
-      <div className="card" style={{ padding: 20, textAlign: 'center' }}>
-        <div style={{ fontSize: 22, marginBottom: 6 }}>🔒</div>
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>Trilhas de estudo são Premium</div>
-        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 12 }}>
-          Estude com sequências guiadas pelas áreas que mais caem na prova.
-        </div>
-        <button className="btn-primary" onClick={onUpgrade}>Desbloquear trilhas</button>
-      </div>
-    );
-  }
+  }, []);
 
   if (!trilhas) return <div style={{ color: 'var(--text-muted)' }}>Carregando trilhas…</div>;
 

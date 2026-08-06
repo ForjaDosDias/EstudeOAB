@@ -1,17 +1,30 @@
 const express = require('express');
 const pool = require('../db');
-const { requirePremium } = require('../middleware/plan');
+const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
-// ── Parâmetros da trilha gamificada (fáceis de ajustar) ──────────────────────
-// Conclusão de um checkpoint = respondeu o mínimo de questões com acerto >= limiar.
-const LIMIAR_APROVACAO = 0.5;        // fração de acerto para concluir um checkpoint
-const MIN_QUESTOES_CHECKPOINT = 5;   // mínimo de questões respondidas (ou o total do tier, se menor)
-const DIFICULDADES = ['baixa', 'media', 'alta']; // ordem de progressão dentro de cada disciplina
+// ── Parâmetros da trilha (fáceis de ajustar) ────────────────────────────────
+// Conclusão de um tema = respondeu o mínimo de questões com acerto >= limiar.
+const LIMIAR_APROVACAO = 0.5; // fração de acerto para concluir um tema
+const MIN_QUESTOES_TEMA = 5; // mínimo de questões respondidas (ou o total do tema, se menor)
 
-// Trilhas são recurso Premium (Free: sem trilhas)
-router.use(requirePremium);
+// Faixas de incidência: quantas questões daquele tema caem, em média, por prova.
+// A ordem do array É a ordem de progressão — o aluno domina o que mais cai antes
+// de gastar tempo no que cai pouco.
+const FAIXAS = [
+  { id: 'alta', label: 'Alta incidência', min: 1.5 },
+  { id: 'media', label: 'Incidência média', min: 1.0 },
+  { id: 'pontual', label: 'Incidência pontual', min: 0 },
+];
+
+function faixaDe(incidencia) {
+  return FAIXAS.find((f) => incidencia >= f.min) || FAIXAS[FAIXAS.length - 1];
+}
+
+// A trilha é aberta: a única trava é o progresso do próprio aluno.
+// Premium segue valendo para os outros recursos (stats, simulados, tema escuro).
+router.use(requireAuth);
 
 // GET /api/trilhas — lista trilhas com contagem de questões disponíveis
 router.get('/', async (req, res) => {
@@ -19,8 +32,8 @@ router.get('/', async (req, res) => {
     const result = await pool.query(
       `SELECT t.id, t.slug, t.nome, t.descricao, t.areas, t.ordem,
               (SELECT COUNT(*)::int FROM questions q WHERE q.area_direito = ANY(t.areas)) AS total_questoes
-       FROM trilhas t
-       ORDER BY t.ordem, t.id`
+         FROM trilhas t
+        ORDER BY t.ordem, t.id`
     );
     res.json({ trilhas: result.rows });
   } catch (err) {
@@ -29,7 +42,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/trilhas/:slug/questoes?total=10 — sorteia questões da trilha
+// GET /api/trilhas/:slug/questoes?total=10 — sorteia questões da trilha inteira
 router.get('/:slug/questoes', async (req, res) => {
   const total = Math.min(parseInt(req.query.total) || 10, 80);
 
@@ -43,10 +56,10 @@ router.get('/:slug/questoes', async (req, res) => {
     const result = await pool.query(
       `SELECT id, enunciado, comando, alternativa_a, alternativa_b,
               alternativa_c, alternativa_d, area_direito, banca, edicao, dificuldade
-       FROM questions
-       WHERE enunciado IS NOT NULL AND area_direito = ANY($1)
-       ORDER BY RANDOM()
-       LIMIT $2`,
+         FROM questions
+        WHERE enunciado IS NOT NULL AND area_direito = ANY($1)
+        ORDER BY RANDOM()
+        LIMIT $2`,
       [trilha.areas, total]
     );
     res.json({ questoes: result.rows, total: result.rows.length });
@@ -56,76 +69,93 @@ router.get('/:slug/questoes', async (req, res) => {
   }
 });
 
-// Monta o estado da trilha para um usuário: disciplinas (áreas) ordenadas por
-// incidência ("qual cai mais"), e dentro de cada uma os checkpoints por
-// dificuldade (baixa→media→alta). A trava é sequencial e por disciplina —
-// um tier só libera quando o anterior da MESMA disciplina foi concluído
-// (tiers vazios são pulados e nunca bloqueiam).
+/**
+ * Monta o mapa da trilha: faixa de incidência → disciplina → temas.
+ *
+ * A incidência de um tema é `questões do tema / edições no banco` — quantas
+ * vezes ele cai, em média, por prova. Questões sem `tema_id` ficam de fora do
+ * mapa (não geram tema fantasma), mas seguem valendo na prática livre.
+ *
+ * Trava: uma disciplina só abre numa faixa quando a MESMA disciplina na faixa
+ * anterior estiver concluída. Faixa em que a disciplina não tem tema nenhum é
+ * pulada e nunca bloqueia.
+ */
 async function montarMapa(areas, userId) {
   const incRes = await pool.query(
-    `SELECT area_direito,
-            COUNT(*)::int AS total,
-            GREATEST(COUNT(DISTINCT edicao), 1)::int AS edicoes,
-            COUNT(*) FILTER (WHERE dificuldade = 'baixa')::int AS baixa,
-            COUNT(*) FILTER (WHERE dificuldade = 'media')::int AS media,
-            COUNT(*) FILTER (WHERE dificuldade = 'alta')::int  AS alta
-       FROM questions
-      WHERE enunciado IS NOT NULL AND area_direito = ANY($1)
-      GROUP BY area_direito`,
+    `SELECT t.id, t.nome, t.slug, t.disciplina,
+            COUNT(q.id)::int AS total,
+            COUNT(q.id)::numeric / GREATEST((SELECT COUNT(DISTINCT edicao) FROM questions), 1) AS incidencia
+       FROM temas t
+       JOIN questions q ON q.tema_id = t.id AND q.enunciado IS NOT NULL
+      WHERE t.ativo AND t.disciplina = ANY($1)
+      GROUP BY t.id, t.nome, t.slug, t.disciplina`,
     [areas]
   );
 
   const perfRes = await pool.query(
-    `SELECT q.area_direito,
-            q.dificuldade,
+    `SELECT q.tema_id,
             COUNT(DISTINCT a.question_id)::int AS respondidas,
             COUNT(DISTINCT a.question_id) FILTER (WHERE a.acertou)::int AS acertos
        FROM answers a
        JOIN questions q ON q.id = a.question_id
-      WHERE a.user_id = $2 AND q.area_direito = ANY($1)
-      GROUP BY q.area_direito, q.dificuldade`,
+      WHERE a.user_id = $2 AND q.tema_id IS NOT NULL AND q.area_direito = ANY($1)
+      GROUP BY q.tema_id`,
     [areas, userId]
   );
 
   const perf = {};
-  for (const r of perfRes.rows) {
-    perf[`${r.area_direito}|${r.dificuldade}`] = { respondidas: r.respondidas, acertos: r.acertos };
-  }
+  for (const r of perfRes.rows) perf[r.tema_id] = r;
 
-  const ordenadas = [...incRes.rows].sort((a, b) => b.total - a.total);
-
-  return ordenadas.map((row) => {
-    let anteriorPendente = false;
-    const checkpoints = [];
-    for (const dif of DIFICULDADES) {
-      const total = row[dif];
-      if (!total) continue; // tier sem questões: pulado, não bloqueia (fiel ao protótipo)
-      const p = perf[`${row.area_direito}|${dif}`] || { respondidas: 0, acertos: 0 };
-      const minNec = Math.min(MIN_QUESTOES_CHECKPOINT, total);
-      const pct = p.respondidas ? p.acertos / p.respondidas : 0;
-      const concluido = p.respondidas >= minNec && pct >= LIMIAR_APROVACAO;
-      checkpoints.push({
-        dificuldade: dif,
-        total,
-        respondidas: p.respondidas,
-        acertos: p.acertos,
-        pct: Math.round(pct * 100),
-        min_necessario: minNec,
-        concluido,
-        bloqueado: anteriorPendente,
-      });
-      if (!concluido) anteriorPendente = true; // trava os tiers seguintes desta disciplina
-    }
+  const temas = incRes.rows.map((row) => {
+    const p = perf[row.id] || { respondidas: 0, acertos: 0 };
+    const minNec = Math.min(MIN_QUESTOES_TEMA, row.total);
+    const pct = p.respondidas ? p.acertos / p.respondidas : 0;
     return {
-      area: row.area_direito,
-      incidencia_avg: Math.round((row.total / row.edicoes) * 10) / 10,
+      tema_id: row.id,
+      nome: row.nome,
+      slug: row.slug,
+      disciplina: row.disciplina,
+      faixa: faixaDe(Number(row.incidencia)).id,
+      incidencia: Math.round(Number(row.incidencia) * 100) / 100,
       total_questoes: row.total,
-      checkpoints,
+      respondidas: p.respondidas,
+      acertos: p.acertos,
+      pct: Math.round(pct * 100),
+      min_necessario: minNec,
+      concluido: p.respondidas >= minNec && pct >= LIMIAR_APROVACAO,
     };
   });
+
+  // Agrupa por faixa (na ordem de progressão) e, dentro dela, por disciplina
+  const disciplinaTravada = new Set();
+  return FAIXAS.map((f) => {
+    const daFaixa = temas.filter((t) => t.faixa === f.id);
+    const porDisciplina = {};
+    for (const t of daFaixa) (porDisciplina[t.disciplina] ||= []).push(t);
+
+    const disciplinas = Object.keys(porDisciplina)
+      .sort()
+      .map((disc) => {
+        const lista = porDisciplina[disc].sort((a, b) => b.incidencia - a.incidencia);
+        const bloqueado = disciplinaTravada.has(disc);
+        return {
+          disciplina: disc,
+          bloqueado,
+          concluida: lista.every((t) => t.concluido),
+          incidencia_total: Math.round(lista.reduce((s, t) => s + t.incidencia, 0) * 100) / 100,
+          temas: lista.map((t) => ({ ...t, bloqueado })),
+        };
+      });
+
+    // Só depois de montar a faixa é que ela passa a travar as seguintes — assim
+    // a própria faixa nunca se autobloqueia.
+    for (const d of disciplinas) if (!d.concluida) disciplinaTravada.add(d.disciplina);
+
+    return { faixa: f.id, label: f.label, min_incidencia: f.min, disciplinas };
+  }).filter((f) => f.disciplinas.length > 0);
 }
 
-// GET /api/trilhas/:slug/mapa — trilha com checkpoints + progresso do usuário
+// GET /api/trilhas/:slug/mapa — trilha por faixa de incidência + progresso do usuário
 router.get('/:slug/mapa', async (req, res) => {
   try {
     const trilhaRes = await pool.query(
@@ -135,22 +165,23 @@ router.get('/:slug/mapa', async (req, res) => {
     const trilha = trilhaRes.rows[0];
     if (!trilha) return res.status(404).json({ error: 'Trilha não encontrada' });
 
-    const disciplinas = await montarMapa(trilha.areas, req.user.userId);
-    res.json({ trilha, disciplinas });
+    const faixas = await montarMapa(trilha.areas, req.user.userId);
+    res.json({ trilha, faixas });
   } catch (err) {
     console.error('GET /trilhas/:slug/mapa error:', err.message);
     res.status(500).json({ error: 'Erro ao montar a trilha' });
   }
 });
 
-// GET /api/trilhas/:slug/checkpoint/:area/:dificuldade/questoes — questões de um
-// checkpoint. A trava é recalculada no servidor: checkpoint bloqueado → 423.
-router.get('/:slug/checkpoint/:area/:dificuldade/questoes', async (req, res) => {
+// GET /api/trilhas/:slug/tema/:temaId/questoes — questões de um tema.
+// A trava é recalculada no servidor: tema bloqueado → 423. O front nunca é a
+// única barreira.
+router.get('/:slug/tema/:temaId/questoes', async (req, res) => {
   const total = Math.min(parseInt(req.query.total) || 10, 80);
-  const { area, dificuldade } = req.params;
+  const temaId = parseInt(req.params.temaId, 10);
 
-  if (!DIFICULDADES.includes(dificuldade)) {
-    return res.status(400).json({ error: 'Dificuldade inválida' });
+  if (!Number.isInteger(temaId)) {
+    return res.status(400).json({ error: 'Tema inválido' });
   }
 
   try {
@@ -159,19 +190,20 @@ router.get('/:slug/checkpoint/:area/:dificuldade/questoes', async (req, res) => 
     ]);
     const trilha = trilhaRes.rows[0];
     if (!trilha) return res.status(404).json({ error: 'Trilha não encontrada' });
-    if (!trilha.areas.includes(area)) {
-      return res.status(404).json({ error: 'Disciplina não pertence a esta trilha' });
-    }
 
-    // Enforcement da trava no servidor — o front nunca é a única barreira
-    const disciplinas = await montarMapa(trilha.areas, req.user.userId);
-    const disc = disciplinas.find((d) => d.area === area);
-    const cp = disc && disc.checkpoints.find((c) => c.dificuldade === dificuldade);
-    if (!cp) return res.status(404).json({ error: 'Checkpoint sem questões' });
-    if (cp.bloqueado) {
+    const faixas = await montarMapa(trilha.areas, req.user.userId);
+    let alvo = null;
+    for (const f of faixas) {
+      for (const d of f.disciplinas) {
+        const t = d.temas.find((x) => x.tema_id === temaId);
+        if (t) alvo = t;
+      }
+    }
+    if (!alvo) return res.status(404).json({ error: 'Tema não pertence a esta trilha' });
+    if (alvo.bloqueado) {
       return res.status(423).json({
         code: 'CHECKPOINT_LOCKED',
-        error: 'Conclua o checkpoint anterior desta disciplina primeiro',
+        error: 'Conclua esta disciplina na faixa de incidência anterior primeiro',
       });
     }
 
@@ -179,15 +211,15 @@ router.get('/:slug/checkpoint/:area/:dificuldade/questoes', async (req, res) => 
       `SELECT id, enunciado, comando, alternativa_a, alternativa_b,
               alternativa_c, alternativa_d, area_direito, banca, edicao, dificuldade
          FROM questions
-        WHERE enunciado IS NOT NULL AND area_direito = $1 AND dificuldade = $2
+        WHERE enunciado IS NOT NULL AND tema_id = $1
         ORDER BY RANDOM()
-        LIMIT $3`,
-      [area, dificuldade, total]
+        LIMIT $2`,
+      [temaId, total]
     );
-    res.json({ questoes: result.rows, total: result.rows.length });
+    res.json({ questoes: result.rows, total: result.rows.length, tema: alvo.nome });
   } catch (err) {
-    console.error('GET /trilhas/:slug/checkpoint error:', err.message);
-    res.status(500).json({ error: 'Erro ao sortear questões do checkpoint' });
+    console.error('GET /trilhas/:slug/tema error:', err.message);
+    res.status(500).json({ error: 'Erro ao sortear questões do tema' });
   }
 });
 

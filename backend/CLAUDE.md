@@ -46,8 +46,10 @@ POST   /api/payments/webhook      — notificações do Mercado Pago (sem auth)
 GET    /api/coins                 — saldo + histórico de moedas               [requireAuth]
 GET    /api/ads/config            — config de anúncios (Free: AdSense 30s)    [requireAuth]
 
-GET    /api/trilhas               — lista trilhas de estudo                   [requirePremium]
-GET    /api/trilhas/:slug/questoes — sorteia questões da trilha               [requirePremium]
+GET    /api/trilhas               — lista trilhas de estudo                   [requireAuth]
+GET    /api/trilhas/:slug/questoes — sorteia questões da trilha               [requireAuth]
+GET    /api/trilhas/:slug/mapa    — faixas de incidência → disciplina → temas [requireAuth]
+GET    /api/trilhas/:slug/tema/:id/questoes — questões do tema; 423 se travado [requireAuth]
 
 GET    /api/health                 — { ok, db }
 ```
@@ -55,7 +57,8 @@ GET    /api/health                 — { ok, db }
 ## Freemium
 
 - `users.plan` (`free` | `premium`) + `users.premium_until` (NULL = vitalício). `isPremium()` em `src/middleware/plan.js`; admins sempre passam.
-- **Premium**: stats (`/api/stats/*` inteiro tem `requirePremium`), trilhas, filtro `?trilha=` no sortear, tema escuro (frontend), sem anúncios.
+- **Premium**: stats (`/api/stats/*` inteiro tem `requirePremium`), filtro `?trilha=` no sortear, tema escuro (frontend), sem anúncios.
+- **Trilha saiu do Premium em 06/08/2026** — a única trava passou a ser o progresso do aluno.
 - **Free**: prática liberada, com anúncios (`/api/ads/config`).
 - Pagamento aprovado → +30 dias de premium (`activatePremium` em `routes/payments.js`, idempotente via `payments.ativado_em`).
 
@@ -85,7 +88,13 @@ GET    /api/health                 — { ok, db }
 
 **Meta diária**: `Math.round(minutos_dia / 2)` questões.
 
-**Áreas válidas**: `civil, const, penal, trabalho, adm, etica, trib`
+**Áreas válidas** (`questions.area_direito`, 13 valores reais no banco):
+`etica, const, civil, proc civil, penal, proc penal, trabalho, proc trab, adm,
+trib e proc trib, empresarial, human, outros`
+
+⚠️ Não é `trib` — o valor real é `trib e proc trib`. O seed das trilhas usava
+`trib` e por isso a Trilha Publicista prometia Tributário e devolvia zero
+questões dessa matéria (corrigido em 06/08/2026).
 
 ## Import PDF (admin.js)
 
@@ -103,3 +112,18 @@ docker exec estudeoab-backend-1 npm run test:coverage
 ```
 
 Estrutura: `tests/setup.js` (env vars) + `tests/middleware/auth.test.js` + `tests/routes/*.test.js`.
+
+## Trilha por incidência (06/08/2026)
+
+A trilha progride por **faixa de incidência**, não por dificuldade: alta (≥1,5
+questões/prova) → média (1,0–1,49) → pontual. Uma disciplina só abre numa faixa
+quando a mesma disciplina fecha a anterior; faixa em que ela não tem tema é
+pulada e nunca bloqueia.
+
+- Catálogo em `temas` (79 registros) + `questions.tema_id`. A coluna legada
+  `questions.tema` é texto livre com ~236 valores distintos para 238 questões —
+  não agrupa nada e não é usada pela trilha.
+- Classificação: `scripts/classificar-temas.js` (DeepSeek). 235/238 classificadas;
+  o resto fica `tema_id NULL` para revisão humana e simplesmente não aparece no mapa.
+- A trava é recalculada no servidor em `/tema/:id/questoes` → **423
+  CHECKPOINT_LOCKED**. O front nunca é a única barreira.
