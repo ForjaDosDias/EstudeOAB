@@ -14,7 +14,7 @@
 
 ## Commits
 
-- **Toda alteração requer um commit descritivo numa branch `feature/*` (nunca direto na `main`).** Use mensagens no formato:
+- **Toda alteração requer um commit descritivo.** Use mensagens no formato:
   ```
   tipo: resumo curto do que foi feito
 
@@ -27,22 +27,40 @@
   - `fix: corrige validação de email no registro`
   - `test: cobre upload de CSV com linhas inválidas`
 
-## Push e integração
+## Fluxo de trabalho e Git
 
-Fluxo da esteira CI/CD: **`feature/*` → `dev` → `main`** (a `main` é protegida; não há push direto).
+> Regra da frota — idêntica nos 5 projetos da VPS. Atualizada em 2026-08-06.
 
-- Rode os testes localmente antes de cada push — nenhum push com teste falhando:
-  ```bash
-  docker exec estudeoab-backend-1 npm test
-  ```
-- Trabalhe sempre a partir de `dev` e abra PR para `dev`:
-  ```bash
-  git checkout -b feature/minha-mudanca dev
-  git push -u origin feature/minha-mudanca
-  gh pr create --base dev        # auto-merge quando o check `test` passar
-  ```
-- **Release:** PR `dev` → `main` exige guard (origem = `dev`) + 1 aprovação humana e dispara o
-  deploy automático na VPS (self-hosted runner). Nunca dar push direto na `main` (bloqueado pelo ruleset).
+**Todo trabalho começa por um plano.** Levantar o que já existe, decidir a abordagem e só então
+implementar.
+
+**Rodar os testes antes de qualquer push — sem exceção:**
+```bash
+docker exec estudeoab-backend-1 npm test
+```
+
+**Ao final de todo plano, sincronizar tudo:**
+```bash
+git add -A && git commit -m "tipo: descrição"
+git push origin main        # push direto — é o fluxo atual
+git push origin main:dev    # mantém a dev alinhada
+```
+
+⚠️ **Commitar ANTES de qualquer push.** Este diretório é o alvo do deploy: todo push na `main`
+dispara o workflow, que faz `git reset --hard FETCH_HEAD` aqui. Qualquer alteração não commitada
+é **destruída** — aconteceu em 06/08/2026 com uma edição de CLAUDE.md.
+
+**Por que push direto na `main`:** nenhuma aplicação da VPS tem cliente hoje, e o gate de aprovação
+humana do fluxo `feature → dev → main` só atrasa o desenvolvimento. Os `bypass_actors` de admin nos
+rulesets são **intencionais**, não descuido.
+
+**A `dev` é mantida em dia de propósito.** Ela não está em uso, mas fica idêntica à `main` para que
+o fluxo com PR volte sem migração no dia em que houver cliente.
+
+**Quando houver cliente:** remover os bypasses dos rulesets e voltar para `feature → dev → main` com
+PR, check `test` verde e 1 aprovação humana. A esteira já está montada — só o bypass precisa sair.
+
+Push na `main` dispara o deploy automático na VPS (self-hosted runner).
 
 ## Issues e rastreamento
 
