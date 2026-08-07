@@ -145,21 +145,31 @@ describe('PATCH /api/sessions/:id/concluir', () => {
     expect(res.status).toBe(409);
   });
 
-  it('200 ao concluir sessão própria com XP calculado', async () => {
-    const hoje = new Date().toISOString().slice(0, 10);
-    const ontem = new Date(Date.now() - 864e5);
-
+  /**
+   * Ordem das queries dentro da transação de concluir:
+   *   BEGIN · SELECT session · agg answers · SELECT user ·
+   *   COUNT respondidas hoje · UPDATE session · UPDATE user · COMMIT
+   * O COUNT entrou em 07/08/2026, quando o streak passou a depender da meta.
+   */
+  function mockConcluir({ total = '5', acertos = '4', ultima, streak = 0, streakMax = 0, meta = 10, feitoHoje }) {
     const client = mockClient([
       {},
-      { rows: [{ id: 1, user_id: 1, concluida: false }] },     // SELECT session
-      { rows: [{ total: '5', acertos: '4', tempo_total_s: '120' }] }, // answers agg
-      { rows: [{ ultima_atividade: ontem, streak: 3 }] },       // SELECT user
-      {},                                                        // UPDATE session
-      {},                                                        // UPDATE user
-      {},                                                        // COMMIT
+      { rows: [{ id: 1, user_id: 1, concluida: false }] },
+      { rows: [{ total, acertos, tempo_total_s: '120' }] },
+      { rows: [{ ultima_atividade: ultima, streak, streak_max: streakMax, meta_questoes_dia: meta }] },
+      { rows: [{ total: feitoHoje }] },
+      {}, {}, {},
     ]);
     pool.connect.mockResolvedValue(client);
-    pool.query.mockResolvedValue({ rows: [{ xp: 60, streak: 4 }] }); // user atualizado
+    return client;
+  }
+
+  const ontem = () => new Date(Date.now() - 864e5);
+  const anteontem = () => new Date(Date.now() - 2 * 864e5);
+
+  it('200 ao concluir sessão própria com XP calculado', async () => {
+    mockConcluir({ ultima: ontem(), streak: 3, feitoHoje: 10, meta: 10 });
+    pool.query.mockResolvedValue({ rows: [{ xp: 60, streak: 4, streak_max: 4 }] });
 
     const res = await request(app)
       .patch('/api/sessions/1/concluir')
@@ -167,30 +177,80 @@ describe('PATCH /api/sessions/:id/concluir', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.acertos).toBe(4);
-    expect(res.body.xp_ganho).toBe(60); // 4 * 15 = 60
-    expect(res.body.streak).toBe(4);
+    expect(res.body.xp_ganho).toBe(60); // 4 * 15
   });
 
   it('200 com bônus de 100% de acerto', async () => {
-    const ontem = new Date(Date.now() - 864e5);
-
-    const client = mockClient([
-      {},
-      { rows: [{ id: 1, user_id: 1, concluida: false }] },
-      { rows: [{ total: '4', acertos: '4', tempo_total_s: '90' }] },
-      { rows: [{ ultima_atividade: ontem, streak: 0 }] },
-      {},
-      {},
-      {},
-    ]);
-    pool.connect.mockResolvedValue(client);
-    pool.query.mockResolvedValue({ rows: [{ xp: 90, streak: 1 }] });
+    mockConcluir({ total: '4', acertos: '4', ultima: ontem(), feitoHoje: 10 });
+    pool.query.mockResolvedValue({ rows: [{ xp: 90, streak: 1, streak_max: 1 }] });
 
     const res = await request(app)
       .patch('/api/sessions/1/concluir')
       .set('Authorization', `Bearer ${token(1)}`);
 
-    expect(res.status).toBe(200);
     expect(res.body.xp_ganho).toBe(90); // 4*15 + 30 bônus
+  });
+
+  // ── Guardrails do streak por meta (07/08/2026) ────────────────────────────
+
+  // Antes desta data o streak acendia com UMA questão. Este teste é a regra nova.
+  it('não acende o streak com a meta ainda não batida', async () => {
+    mockConcluir({ ultima: ontem(), streak: 3, meta: 10, feitoHoje: 9 });
+    pool.query.mockResolvedValue({ rows: [{ xp: 60, streak: 3, streak_max: 3 }] });
+
+    const res = await request(app)
+      .patch('/api/sessions/1/concluir')
+      .set('Authorization', `Bearer ${token(1)}`);
+
+    expect(res.body.streak).toBe(3); // continua 3, não virou 4
+    expect(res.body.meta).toMatchObject({ alvo: 10, feito: 9, batida: false });
+  });
+
+  it('acende o streak exatamente ao atingir a meta', async () => {
+    mockConcluir({ ultima: ontem(), streak: 3, meta: 10, feitoHoje: 10 });
+    pool.query.mockResolvedValue({ rows: [{ xp: 60, streak: 4, streak_max: 4 }] });
+
+    const res = await request(app)
+      .patch('/api/sessions/1/concluir')
+      .set('Authorization', `Bearer ${token(1)}`);
+
+    expect(res.body.streak).toBe(4);
+    expect(res.body.meta.batida).toBe(true);
+  });
+
+  it('zera o streak quando um dia foi perdido', async () => {
+    mockConcluir({ ultima: anteontem(), streak: 12, meta: 10, feitoHoje: 10 });
+    pool.query.mockResolvedValue({ rows: [{ xp: 60, streak: 1, streak_max: 12 }] });
+
+    const res = await request(app)
+      .patch('/api/sessions/1/concluir')
+      .set('Authorization', `Bearer ${token(1)}`);
+
+    expect(res.body.streak).toBe(1); // recomeça
+  });
+
+  // O recorde é histórico: perder a sequência não pode apagá-lo.
+  it('mantém streak_max quando o streak zera', async () => {
+    const client = mockConcluir({ ultima: anteontem(), streak: 12, streakMax: 12, meta: 10, feitoHoje: 10 });
+    pool.query.mockResolvedValue({ rows: [{ xp: 60, streak: 1, streak_max: 12 }] });
+
+    await request(app).patch('/api/sessions/1/concluir').set('Authorization', `Bearer ${token(1)}`);
+
+    const updateUser = client.query.mock.calls.find((c) => /UPDATE users SET xp/.test(c[0]));
+    expect(updateUser[1][1]).toBe(1);  // streak novo
+    expect(updateUser[1][2]).toBe(12); // streak_max preservado
+  });
+
+  // Só o dia em que a meta foi batida conta como "último dia ativo" — é o que
+  // sustenta a emenda do dia seguinte.
+  it('não marca ultima_atividade em dia sem meta batida', async () => {
+    const anteontemDate = anteontem();
+    const client = mockConcluir({ ultima: anteontemDate, streak: 5, meta: 10, feitoHoje: 3 });
+    pool.query.mockResolvedValue({ rows: [{ xp: 60, streak: 5, streak_max: 5 }] });
+
+    await request(app).patch('/api/sessions/1/concluir').set('Authorization', `Bearer ${token(1)}`);
+
+    const updateUser = client.query.mock.calls.find((c) => /UPDATE users SET xp/.test(c[0]));
+    expect(updateUser[1][3]).toBe(anteontemDate); // inalterada
   });
 });

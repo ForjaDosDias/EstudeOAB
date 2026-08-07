@@ -54,16 +54,26 @@ const perfRows = {
   ],
 };
 
-function mockMapa(temas = temasRows, perf = perfRows) {
+function mockMapa(temas = temasRows, perf = perfRows, excluidas = []) {
+  // O filtro de disciplina acontece no SQL (`WHERE t.disciplina = ANY($1)`).
+  // O mock precisa imitar isso, senão o teste de exclusão afirmaria algo que
+  // ele não consegue provar — devolveria as linhas excluídas de qualquer jeito.
+  const filtradas = { rows: temas.rows.filter((t) => !excluidas.includes(t.disciplina)) };
   pool.query
     .mockResolvedValueOnce({ rows: [fakeTrilha] }) // lookup da trilha
-    .mockResolvedValueOnce(temas) // incidência por tema
+    .mockResolvedValueOnce({ rows: [{ areas_excluidas: excluidas }] }) // exclusões do aluno
+    .mockResolvedValueOnce(filtradas) // incidência por tema
     .mockResolvedValueOnce(perf); // progresso do aluno
 }
 
 const get = (url) => request(app).get(url).set('Authorization', `Bearer ${token()}`);
 
-beforeEach(() => jest.clearAllMocks());
+// resetAllMocks, não clearAllMocks: o `clear` zera as chamadas registradas mas
+// NÃO esvazia a fila do mockResolvedValueOnce. Testes cujo caminho retorna cedo
+// (ex.: aluno que exclui todas as disciplinas) consomem menos respostas do que
+// enfileiraram, e a sobra vaza para o teste seguinte — que falha por um motivo
+// que não tem nada a ver com ele.
+beforeEach(() => jest.resetAllMocks());
 
 describe('GET /api/trilhas', () => {
   it('401 sem token', async () => {
@@ -150,9 +160,10 @@ describe('GET /api/trilhas/:slug/mapa', () => {
 });
 
 describe('GET /api/trilhas/:slug/tema/:temaId/questoes', () => {
-  function mockTema(temas = temasRows, perf = perfRows) {
+  function mockTema(temas = temasRows, perf = perfRows, excluidas = []) {
     pool.query
       .mockResolvedValueOnce({ rows: [{ areas: trilhaAreas }] }) // lookup das áreas
+      .mockResolvedValueOnce({ rows: [{ areas_excluidas: excluidas }] }) // exclusões
       .mockResolvedValueOnce(temas)
       .mockResolvedValueOnce(perf);
   }
@@ -187,5 +198,69 @@ describe('GET /api/trilhas/:slug/tema/:temaId/questoes', () => {
     expect(res.body.questoes).toHaveLength(1);
     expect(res.body.tema).toBe('Controle de constitucionalidade');
     expect(pool.query.mock.calls.at(-1)[1]).toEqual([10, 10]); // filtra por tema_id
+  });
+});
+
+// ── Exclusão de disciplinas e preview do onboarding (07/08/2026) ────────────
+
+describe('exclusão de disciplinas', () => {
+  /**
+   * Guardrail da decisão de produto: a disciplina excluída some da TRILHA e só
+   * dela. /questions/sortear e /sessions continuam sorteando de tudo — esconder
+   * do estudo guiado é escolha do aluno, esconder da prova não é opção nossa.
+   */
+  it('remove a disciplina excluída do mapa', async () => {
+    mockMapa(temasRows, perfRows, ['etica']);
+    const res = await get('/api/trilhas/essencial-1a-fase/mapa');
+
+    const disciplinas = res.body.faixas.flatMap((f) => f.disciplinas.map((d) => d.disciplina));
+    expect(disciplinas).not.toContain('etica');
+    expect(disciplinas).toContain('const');
+    expect(res.body.excluidas).toEqual(['etica']);
+  });
+
+  it('a query de temas nunca recebe a área excluída', async () => {
+    mockMapa(temasRows, perfRows, ['etica']);
+    await get('/api/trilhas/essencial-1a-fase/mapa');
+
+    const queryTemas = pool.query.mock.calls.find((c) => /FROM temas t/.test(c[0]));
+    expect(queryTemas[1][0]).toEqual(['civil', 'const']); // sem 'etica'
+  });
+
+  it('devolve mapa vazio se o aluno excluir tudo que a trilha tem', async () => {
+    mockMapa(temasRows, perfRows, ['etica', 'civil', 'const']);
+    const res = await get('/api/trilhas/essencial-1a-fase/mapa');
+    expect(res.body.faixas).toEqual([]);
+  });
+});
+
+describe('GET /api/trilhas/preview', () => {
+  /**
+   * Guardrail: é a tela 3 do onboarding, que roda ANTES de existir conta.
+   * Se esta rota passar a exigir token, o fluxo inteiro quebra — e quebra
+   * silenciosamente, porque o front só veria um 401 no lugar do preview.
+   */
+  it('responde sem token', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ slug: 'essencial-1a-fase', nome: 'Essencial', descricao: '', areas: trilhaAreas }] })
+      .mockResolvedValueOnce(temasRows)
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app).get('/api/trilhas/preview'); // sem Authorization
+    expect(res.status).toBe(200);
+    expect(res.body.total_temas).toBe(5);
+  });
+
+  it('aplica as exclusões vindas da query string', async () => {
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ slug: 'essencial-1a-fase', nome: 'Essencial', descricao: '', areas: trilhaAreas }] })
+      .mockResolvedValueOnce(temasRows)
+      .mockResolvedValueOnce({ rows: [] });
+
+    const res = await request(app).get('/api/trilhas/preview?excluir=etica');
+
+    const queryTemas = pool.query.mock.calls.find((c) => /FROM temas t/.test(c[0]));
+    expect(queryTemas[1][0]).toEqual(['civil', 'const']);
+    expect(res.body.excluidas).toEqual(['etica']);
   });
 });

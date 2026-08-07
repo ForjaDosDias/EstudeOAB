@@ -22,9 +22,60 @@ function faixaDe(incidencia) {
   return FAIXAS.find((f) => incidencia >= f.min) || FAIXAS[FAIXAS.length - 1];
 }
 
+// ── Rota pública ───────────────────────────────────────────────────────────
+// Fica ACIMA do requireAuth de propósito: é a tela 3 do onboarding, que mostra
+// a trilha montada antes de o aluno criar conta. Mover para baixo quebra o
+// fluxo inteiro, porque ali ainda não existe token.
+// GET /api/trilhas/preview?excluir=penal,adm
+router.get('/preview', async (req, res) => {
+  const excluidas = (req.query.excluir || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  try {
+    const trilhaRes = await pool.query(
+      'SELECT slug, nome, descricao, areas FROM trilhas ORDER BY ordem, id LIMIT 1'
+    );
+    const trilha = trilhaRes.rows[0];
+    if (!trilha) return res.status(404).json({ error: 'Nenhuma trilha cadastrada' });
+
+    // userId 0 não existe: o preview é sempre "progresso zero", sem consultar aluno.
+    const faixas = await montarMapa(trilha.areas, 0, excluidas);
+
+    // Só o resumo — o preview é um cartão visual, não a trilha inteira.
+    res.json({
+      trilha: { nome: trilha.nome, descricao: trilha.descricao },
+      excluidas,
+      faixas: faixas.map((f) => ({
+        faixa: f.faixa,
+        label: f.label,
+        disciplinas: f.disciplinas.map((d) => ({
+          disciplina: d.disciplina,
+          temas: d.temas.length,
+          incidencia_total: d.incidencia_total,
+        })),
+      })),
+      total_temas: faixas.reduce(
+        (s, f) => s + f.disciplinas.reduce((x, d) => x + d.temas.length, 0),
+        0
+      ),
+    });
+  } catch (err) {
+    console.error('GET /trilhas/preview error:', err.message);
+    res.status(500).json({ error: 'Erro ao montar o preview da trilha' });
+  }
+});
+
 // A trilha é aberta: a única trava é o progresso do próprio aluno.
 // Premium segue valendo para os outros recursos (stats, simulados, tema escuro).
 router.use(requireAuth);
+
+// Disciplinas que o aluno pediu para não estudar (escolhidas no onboarding).
+async function excluidasDoUsuario(userId) {
+  const r = await pool.query('SELECT areas_excluidas FROM users WHERE id = $1', [userId]);
+  return r.rows[0]?.areas_excluidas || [];
+}
 
 // GET /api/trilhas — lista trilhas com contagem de questões disponíveis
 router.get('/', async (req, res) => {
@@ -80,7 +131,13 @@ router.get('/:slug/questoes', async (req, res) => {
  * anterior estiver concluída. Faixa em que a disciplina não tem tema nenhum é
  * pulada e nunca bloqueia.
  */
-async function montarMapa(areas, userId) {
+async function montarMapa(areas, userId, excluidas = []) {
+  // A exclusão some da TRILHA e só dela: /questions/sortear e /sessions
+  // continuam sorteando de todas as áreas. Esconder a disciplina do estudo
+  // guiado é escolha do aluno; esconder da prova não é opção nossa.
+  const efetivas = areas.filter((a) => !excluidas.includes(a));
+  if (!efetivas.length) return [];
+
   const incRes = await pool.query(
     `SELECT t.id, t.nome, t.slug, t.disciplina,
             COUNT(q.id)::int AS total,
@@ -89,7 +146,7 @@ async function montarMapa(areas, userId) {
        JOIN questions q ON q.tema_id = t.id AND q.enunciado IS NOT NULL
       WHERE t.ativo AND t.disciplina = ANY($1)
       GROUP BY t.id, t.nome, t.slug, t.disciplina`,
-    [areas]
+    [efetivas]
   );
 
   const perfRes = await pool.query(
@@ -100,7 +157,7 @@ async function montarMapa(areas, userId) {
        JOIN questions q ON q.id = a.question_id
       WHERE a.user_id = $2 AND q.tema_id IS NOT NULL AND q.area_direito = ANY($1)
       GROUP BY q.tema_id`,
-    [areas, userId]
+    [efetivas, userId]
   );
 
   const perf = {};
@@ -165,8 +222,9 @@ router.get('/:slug/mapa', async (req, res) => {
     const trilha = trilhaRes.rows[0];
     if (!trilha) return res.status(404).json({ error: 'Trilha não encontrada' });
 
-    const faixas = await montarMapa(trilha.areas, req.user.userId);
-    res.json({ trilha, faixas });
+    const excluidas = await excluidasDoUsuario(req.user.userId);
+    const faixas = await montarMapa(trilha.areas, req.user.userId, excluidas);
+    res.json({ trilha, faixas, excluidas });
   } catch (err) {
     console.error('GET /trilhas/:slug/mapa error:', err.message);
     res.status(500).json({ error: 'Erro ao montar a trilha' });
@@ -191,7 +249,8 @@ router.get('/:slug/tema/:temaId/questoes', async (req, res) => {
     const trilha = trilhaRes.rows[0];
     if (!trilha) return res.status(404).json({ error: 'Trilha não encontrada' });
 
-    const faixas = await montarMapa(trilha.areas, req.user.userId);
+    const excluidas = await excluidasDoUsuario(req.user.userId);
+    const faixas = await montarMapa(trilha.areas, req.user.userId, excluidas);
     let alvo = null;
     for (const f of faixas) {
       for (const d of f.disciplinas) {

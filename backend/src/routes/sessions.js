@@ -1,6 +1,7 @@
 const express = require('express');
 const pool = require('../db');
 const { requireAuth } = require('../middleware/auth');
+const coinsService = require('../services/coins.service');
 
 const router = express.Router();
 
@@ -102,24 +103,38 @@ router.patch('/:id/concluir', requireAuth, async (req, res) => {
     let xpGanho = acertosInt * 15;
     if (totalInt > 0 && acertosInt === totalInt) xpGanho += 30;
 
-    // Calcular streak
+    // ── Streak ────────────────────────────────────────────────────────────
+    // Até 06/08/2026 o streak acendia ao concluir QUALQUER sessão — uma questão
+    // já valia o dia. Agora ele só acende quando o aluno bate a meta diária,
+    // que é o que a mecânica de retenção promete.
     const userRes = await client.query(
-      'SELECT ultima_atividade, streak FROM users WHERE id = $1',
+      'SELECT ultima_atividade, streak, streak_max, meta_questoes_dia FROM users WHERE id = $1',
       [userId]
     );
-    const { ultima_atividade, streak } = userRes.rows[0];
+    const { ultima_atividade, streak, streak_max, meta_questoes_dia } = userRes.rows[0];
+    const meta = meta_questoes_dia || 10;
+
+    const respondidasHojeRes = await client.query(
+      `SELECT COUNT(*)::int AS total FROM answers
+        WHERE user_id = $1 AND respondida_em::date = CURRENT_DATE`,
+      [userId]
+    );
+    const respondidasHoje = respondidasHojeRes.rows[0]?.total || 0;
+    const metaBatida = respondidasHoje >= meta;
+
     const hoje = new Date().toISOString().slice(0, 10);
     const ontem = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
     const ultimaStr = ultima_atividade ? ultima_atividade.toISOString().slice(0, 10) : null;
 
-    let novoStreak;
-    if (ultimaStr === hoje) {
-      novoStreak = streak;
-    } else if (ultimaStr === ontem) {
-      novoStreak = streak + 1;
-    } else {
-      novoStreak = 1;
+    let novoStreak = streak;
+    if (metaBatida && ultimaStr !== hoje) {
+      // Um dia perdido zera: só emenda quem bateu a meta ontem.
+      novoStreak = ultimaStr === ontem ? streak + 1 : 1;
     }
+    // `ultima_atividade` marca o último dia em que a META foi batida — é o que
+    // sustenta a emenda do dia seguinte. Dia com prática abaixo da meta não conta.
+    const novaUltimaAtividade = metaBatida ? hoje : ultima_atividade;
+    const novoMax = Math.max(novoStreak, streak_max || 0);
 
     await client.query(
       `UPDATE sessions SET acertos=$1, tempo_total_s=$2, xp_ganho=$3,
@@ -128,14 +143,21 @@ router.patch('/:id/concluir', requireAuth, async (req, res) => {
     );
 
     await client.query(
-      `UPDATE users SET xp = xp + $1, streak = $2, ultima_atividade = $3 WHERE id = $4`,
-      [xpGanho, novoStreak, hoje, userId]
+      `UPDATE users SET xp = xp + $1, streak = $2, streak_max = $3, ultima_atividade = $4
+        WHERE id = $5`,
+      [xpGanho, novoStreak, novoMax, novaUltimaAtividade, userId]
     );
 
     await client.query('COMMIT');
 
+    // Fora da transação, no padrão das outras moedas: falha aqui não desfaz a sessão.
+    let moedasMarco = 0;
+    if (metaBatida && novoStreak > streak) {
+      moedasMarco = await coinsService.awardStreakMilestone(userId, novoStreak);
+    }
+
     const userAtualizado = await pool.query(
-      'SELECT xp, streak FROM users WHERE id = $1', [userId]
+      'SELECT xp, streak, streak_max FROM users WHERE id = $1', [userId]
     );
 
     res.json({
@@ -144,6 +166,9 @@ router.patch('/:id/concluir', requireAuth, async (req, res) => {
       tempo_total_s: parseInt(tempo_total_s),
       xp_ganho: xpGanho,
       streak: novoStreak,
+      streak_max: userAtualizado.rows[0].streak_max,
+      meta: { alvo: meta, feito: respondidasHoje, batida: metaBatida },
+      moedas_marco: moedasMarco,
       xp_total: userAtualizado.rows[0].xp,
     });
   } catch (err) {

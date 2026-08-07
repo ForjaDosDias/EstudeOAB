@@ -354,3 +354,23 @@ UPDATE trilhas SET areas = ARRAY['civil','proc civil']                          
 UPDATE trilhas SET areas = ARRAY['trabalho','proc trab']                        WHERE slug = 'trabalhista';
 UPDATE trilhas SET areas = ARRAY['const','adm','trib e proc trib']              WHERE slug = 'publicista';
 UPDATE trilhas SET areas = ARRAY['etica','civil','proc civil','const']          WHERE slug = 'essencial-1a-fase';
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Onboarding em 3 telas + streak por meta diária (2026-08-07)
+--
+-- `areas` (legado) é lista de INCLUSÃO e não é usada pela trilha; fica intacta.
+-- A exclusão é o conceito novo: o aluno escolhe até 2 disciplinas que não quer
+-- estudar, e elas somem da TRILHA — continuam aparecendo na prática livre e nos
+-- simulados, para não esconder conteúdo que cai na prova.
+--
+-- `meta_questoes_dia` substitui a conversão escondida `minutos_dia / 2` como
+-- fonte da meta. `minutos_dia` continua existindo porque
+-- /api/stats/study-plan/next ainda o usa.
+-- ─────────────────────────────────────────────────────────────────────────────
+ALTER TABLE users ADD COLUMN IF NOT EXISTS areas_excluidas   TEXT[]  DEFAULT '{}';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS meta_questoes_dia INTEGER DEFAULT 10;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_max        INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_em     TIMESTAMPTZ;
+
+-- Quem já tem streak pela regra antiga mantém o número; o recorde parte dele.
+UPDATE users SET streak_max = GREATEST(COALESCE(streak_max, 0), COALESCE(streak, 0));

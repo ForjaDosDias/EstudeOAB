@@ -32,6 +32,9 @@ function publicUser(row) {
     dataProva:        row.data_prova,
     xp:               row.xp,
     streak:           row.streak,
+    streakMax:        row.streak_max ?? 0,
+    areasExcluidas:   row.areas_excluidas || [],
+    metaQuestoesDia:  row.meta_questoes_dia ?? 10,
     plan:             premium ? 'premium' : 'free',
     premiumUntil:     row.premium_until || null,
     coins:            row.coins ?? 0,
@@ -41,7 +44,14 @@ function publicUser(row) {
 
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
-  const { email, password, nome, edicao, minutosDia, area_segunda_fase, dataProva } = req.body;
+  const {
+    email, password, nome, edicao, minutosDia, area_segunda_fase, dataProva,
+    areas_excluidas, meta_questoes_dia,
+  } = req.body;
+
+  // O onboarding permite excluir no máximo 2 disciplinas. O limite é validado
+  // aqui também, não só no front — a API é chamável direto.
+  const excluidas = Array.isArray(areas_excluidas) ? areas_excluidas.slice(0, 2) : [];
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email e senha são obrigatórios' });
@@ -56,8 +66,9 @@ router.post('/register', async (req, res) => {
   try {
     const hash = await bcrypt.hash(password, SALT_ROUNDS);
     const result = await pool.query(
-      `INSERT INTO users (email, password_hash, nome, edicao, minutos_dia, area_segunda_fase, data_prova)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO users (email, password_hash, nome, edicao, minutos_dia, area_segunda_fase,
+                          data_prova, areas_excluidas, meta_questoes_dia, onboarding_em)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
        RETURNING *`,
       [
         email.toLowerCase().trim(),
@@ -67,6 +78,8 @@ router.post('/register', async (req, res) => {
         minutosDia || 30,
         area_segunda_fase || 'civil',
         dataProva || null,
+        excluidas,
+        parseInt(meta_questoes_dia, 10) || 10,
       ]
     );
     const user = result.rows[0];
@@ -289,7 +302,7 @@ router.get('/me', requireAuth, async (req, res) => {
 
 // PATCH /api/auth/profile  (atualiza nome, email e/ou senha)
 router.patch('/profile', requireAuth, async (req, res) => {
-  const { nome, email, senhaAtual, novaSenha } = req.body;
+  const { nome, email, senhaAtual, novaSenha, areas_excluidas, meta_questoes_dia } = req.body;
 
   try {
     const result = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.userId]);
@@ -329,6 +342,37 @@ router.patch('/profile', requireAuth, async (req, res) => {
       const hash = await bcrypt.hash(novaSenha, SALT_ROUNDS);
       setCols.push(`password_hash = $${vals.length + 1}`);
       vals.push(hash);
+    }
+
+    // Disciplinas excluídas — o aluno pode mudar de ideia depois do onboarding.
+    if (areas_excluidas !== undefined) {
+      if (!Array.isArray(areas_excluidas)) {
+        return res.status(400).json({ error: 'areas_excluidas deve ser uma lista' });
+      }
+      if (areas_excluidas.length > 2) {
+        return res.status(400).json({ error: 'No máximo 2 disciplinas podem ser excluídas' });
+      }
+      setCols.push(`areas_excluidas = $${vals.length + 1}`);
+      vals.push(areas_excluidas);
+    }
+
+    // Meta diária. A alteração só vale a partir de amanhã: sem isso dava para
+    // baixar a meta no fim do dia e "ganhar" o streak sem ter estudado.
+    if (meta_questoes_dia !== undefined) {
+      const meta = parseInt(meta_questoes_dia, 10);
+      if (!Number.isInteger(meta) || meta < 1 || meta > 100) {
+        return res.status(400).json({ error: 'Meta deve ser um número entre 1 e 100' });
+      }
+      const hojeJaContado = user.ultima_atividade &&
+        user.ultima_atividade.toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
+      if (hojeJaContado && meta < (user.meta_questoes_dia || 10)) {
+        return res.status(409).json({
+          code: 'META_JA_CONTADA',
+          error: 'A meta de hoje já foi contabilizada. A redução vale a partir de amanhã.',
+        });
+      }
+      setCols.push(`meta_questoes_dia = $${vals.length + 1}`);
+      vals.push(meta);
     }
 
     if (setCols.length === 0) return res.status(400).json({ error: 'Nenhum campo para atualizar' });

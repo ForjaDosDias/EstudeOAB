@@ -15,6 +15,7 @@ const paymentsRouter      = require('./routes/payments');
 const coinsRouter         = require('./routes/coins');
 const trilhasRouter       = require('./routes/trilhas');
 const adsRouter           = require('./routes/ads');
+const meRouter            = require('./routes/me');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -35,6 +36,7 @@ app.use('/api/payments',      paymentsRouter);
 app.use('/api/coins',         coinsRouter);
 app.use('/api/trilhas',       trilhasRouter);
 app.use('/api/ads',           adsRouter);
+app.use('/api/me',            meRouter);
 
 app.get('/api/health', async (req, res) => {
   try {
