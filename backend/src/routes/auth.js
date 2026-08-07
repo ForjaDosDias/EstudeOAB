@@ -33,7 +33,7 @@ function publicUser(row) {
     xp:               row.xp,
     streak:           row.streak,
     streakMax:        row.streak_max ?? 0,
-    areasExcluidas:   row.areas_excluidas || [],
+    areasFoco:        row.areas_foco || [],
     metaQuestoesDia:  row.meta_questoes_dia ?? 10,
     plan:             premium ? 'premium' : 'free',
     premiumUntil:     row.premium_until || null,
@@ -42,16 +42,38 @@ function publicUser(row) {
   };
 }
 
+/**
+ * Valida as disciplinas de foco contra o catálogo real (`temas.disciplina`).
+ *
+ * A lista de válidos sai do banco, não de um array no código: foi uma lista
+ * chumbada e desatualizada (`trib` em vez de `trib e proc trib`) que fez a
+ * Trilha Publicista prometer Tributário e devolver zero questões.
+ *
+ * Lista vazia é legítima e significa "todas" — é o que grava quem clica em
+ * "quero estudar todas as matérias".
+ */
+async function validarFoco(lista) {
+  if (lista === undefined) return { ok: true, valores: undefined };
+  if (!Array.isArray(lista)) return { ok: false, erro: 'areas_foco deve ser uma lista' };
+
+  const valores = [...new Set(lista.map((s) => String(s).trim()).filter(Boolean))];
+  if (!valores.length) return { ok: true, valores: [] };
+
+  const r = await pool.query('SELECT DISTINCT disciplina FROM temas WHERE ativo');
+  const validas = new Set(r.rows.map((x) => x.disciplina));
+  const invalidas = valores.filter((v) => !validas.has(v));
+  if (invalidas.length) {
+    return { ok: false, erro: `Disciplina inexistente: ${invalidas.join(', ')}` };
+  }
+  return { ok: true, valores };
+}
+
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
   const {
     email, password, nome, edicao, minutosDia, area_segunda_fase, dataProva,
-    areas_excluidas, meta_questoes_dia,
+    areas_foco, meta_questoes_dia,
   } = req.body;
-
-  // O onboarding permite excluir no máximo 2 disciplinas. O limite é validado
-  // aqui também, não só no front — a API é chamável direto.
-  const excluidas = Array.isArray(areas_excluidas) ? areas_excluidas.slice(0, 2) : [];
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email e senha são obrigatórios' });
@@ -64,10 +86,13 @@ router.post('/register', async (req, res) => {
   }
 
   try {
+    const foco = await validarFoco(areas_foco);
+    if (!foco.ok) return res.status(400).json({ error: foco.erro });
+
     const hash = await bcrypt.hash(password, SALT_ROUNDS);
     const result = await pool.query(
       `INSERT INTO users (email, password_hash, nome, edicao, minutos_dia, area_segunda_fase,
-                          data_prova, areas_excluidas, meta_questoes_dia, onboarding_em)
+                          data_prova, areas_foco, meta_questoes_dia, onboarding_em)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
        RETURNING *`,
       [
@@ -78,7 +103,7 @@ router.post('/register', async (req, res) => {
         minutosDia || 30,
         area_segunda_fase || 'civil',
         dataProva || null,
-        excluidas,
+        foco.valores || [],
         parseInt(meta_questoes_dia, 10) || 10,
       ]
     );
@@ -302,7 +327,7 @@ router.get('/me', requireAuth, async (req, res) => {
 
 // PATCH /api/auth/profile  (atualiza nome, email e/ou senha)
 router.patch('/profile', requireAuth, async (req, res) => {
-  const { nome, email, senhaAtual, novaSenha, areas_excluidas, meta_questoes_dia } = req.body;
+  const { nome, email, senhaAtual, novaSenha, areas_foco, meta_questoes_dia } = req.body;
 
   try {
     const result = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.userId]);
@@ -344,16 +369,12 @@ router.patch('/profile', requireAuth, async (req, res) => {
       vals.push(hash);
     }
 
-    // Disciplinas excluídas — o aluno pode mudar de ideia depois do onboarding.
-    if (areas_excluidas !== undefined) {
-      if (!Array.isArray(areas_excluidas)) {
-        return res.status(400).json({ error: 'areas_excluidas deve ser uma lista' });
-      }
-      if (areas_excluidas.length > 2) {
-        return res.status(400).json({ error: 'No máximo 2 disciplinas podem ser excluídas' });
-      }
-      setCols.push(`areas_excluidas = $${vals.length + 1}`);
-      vals.push(areas_excluidas);
+    // Disciplinas de foco — o aluno pode mudar de ideia depois do onboarding.
+    if (areas_foco !== undefined) {
+      const foco = await validarFoco(areas_foco);
+      if (!foco.ok) return res.status(400).json({ error: foco.erro });
+      setCols.push(`areas_foco = $${vals.length + 1}`);
+      vals.push(foco.valores);
     }
 
     // Meta diária. A alteração só vale a partir de amanhã: sem isso dava para

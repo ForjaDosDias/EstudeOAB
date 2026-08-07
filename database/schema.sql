@@ -359,9 +359,9 @@ UPDATE trilhas SET areas = ARRAY['etica','civil','proc civil','const']          
 -- Onboarding em 3 telas + streak por meta diária (2026-08-07)
 --
 -- `areas` (legado) é lista de INCLUSÃO e não é usada pela trilha; fica intacta.
--- A exclusão é o conceito novo: o aluno escolhe até 2 disciplinas que não quer
--- estudar, e elas somem da TRILHA — continuam aparecendo na prática livre e nos
--- simulados, para não esconder conteúdo que cai na prova.
+-- A exclusão era o conceito: o aluno escolhia até 2 disciplinas que não queria
+-- estudar. ⚠️ SUPERADO em 2026-08-08 pelo bloco de `areas_foco` no fim deste
+-- arquivo — a pergunta inverteu para "o que você quer focar".
 --
 -- `meta_questoes_dia` substitui a conversão escondida `minutos_dia / 2` como
 -- fonte da meta. `minutos_dia` continua existindo porque
@@ -374,3 +374,30 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_em     TIMESTAMPTZ;
 
 -- Quem já tem streak pela regra antiga mantém o número; o recorde parte dele.
 UPDATE users SET streak_max = GREATEST(COALESCE(streak_max, 0), COALESCE(streak, 0));
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Foco de disciplinas: a exclusão virou inclusão (2026-08-08)
+--
+-- O onboarding parou de perguntar "o que você NÃO quer estudar" (até 2) e passou
+-- a perguntar "o que você QUER focar" (mínimo 1, máximo tudo). A trilha é montada
+-- SÓ com o que está aqui.
+--
+-- `areas_foco = '{}'` significa TODAS as disciplinas — é o estado de quem clicou
+-- em "quero estudar todas" e o default de quem nunca passou pelo onboarding.
+-- Guardar as 13 strings explicitamente seria pior: disciplina nova entraria no
+-- banco e ficaria invisível para todo mundo que já tem conta.
+--
+-- `areas_excluidas` fica como coluna LEGADA — ninguém mais lê dela depois desta
+-- data. Não é dropada porque é a origem do backfill abaixo e a única forma de
+-- refazer a conversão se ela estiver errada.
+-- ─────────────────────────────────────────────────────────────────────────────
+ALTER TABLE users ADD COLUMN IF NOT EXISTS areas_foco TEXT[] DEFAULT '{}';
+
+-- Preserva a escolha de quem já tinha exclusões: foco = disciplinas ativas − excluídas.
+UPDATE users u
+   SET areas_foco = ARRAY(
+         SELECT DISTINCT t.disciplina
+           FROM temas t
+          WHERE t.ativo AND NOT (t.disciplina = ANY(u.areas_excluidas)))
+ WHERE COALESCE(array_length(u.areas_excluidas, 1), 0) > 0
+   AND COALESCE(array_length(u.areas_foco, 1), 0) = 0;

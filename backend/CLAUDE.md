@@ -46,9 +46,10 @@ POST   /api/payments/webhook      — notificações do Mercado Pago (sem auth)
 GET    /api/coins                 — saldo + histórico de moedas               [requireAuth]
 GET    /api/ads/config            — config de anúncios (Free: AdSense 30s)    [requireAuth]
 
+GET    /api/trilhas/preview       — disciplinas + temas por incidência (SEM auth — tela do onboarding)
 GET    /api/trilhas               — lista trilhas de estudo                   [requireAuth]
 GET    /api/trilhas/:slug/questoes — sorteia questões da trilha               [requireAuth]
-GET    /api/trilhas/:slug/mapa    — faixas de incidência → disciplina → temas [requireAuth]
+GET    /api/trilhas/:slug/mapa    — disciplina → temas + progresso            [requireAuth]
 GET    /api/trilhas/:slug/tema/:id/questoes — questões do tema; 423 se travado [requireAuth]
 
 GET    /api/health                 — { ok, db }
@@ -113,12 +114,37 @@ docker exec estudeoab-backend-1 npm run test:coverage
 
 Estrutura: `tests/setup.js` (env vars) + `tests/middleware/auth.test.js` + `tests/routes/*.test.js`.
 
-## Trilha por incidência (06/08/2026)
+## Trilha por incidência (06/08/2026) · por disciplina (08/08/2026)
 
-A trilha progride por **faixa de incidência**, não por dificuldade: alta (≥1,5
-questões/prova) → média (1,0–1,49) → pontual. Uma disciplina só abre numa faixa
-quando a mesma disciplina fecha a anterior; faixa em que ela não tem tema é
+A trilha progride por **incidência**, não por dificuldade: alta (≥1,5
+questões/prova) → média (1,0–1,49) → pontual. Um tema só abre quando os de
+incidência maior da mesma disciplina fecham; faixa em que ela não tem tema é
 pulada e nunca bloqueia.
+
+**A apresentação virou por disciplina em 08/08/2026.** `montarMapa()` continua
+calculando faixa → disciplina → temas (é ali que mora a trava), e
+`agruparPorDisciplina()` vira isso do avesso para a resposta da API. A
+progressão não mudou — só quem é a seção de primeiro nível, porque o aluno
+pensa "quero estudar Penal", não "quero estudar a faixa alta".
+
+### Foco de disciplinas (08/08/2026)
+
+`users.areas_foco TEXT[]` substituiu `users.areas_excluidas` (que fica no banco
+como coluna legada, sem leitor). A pergunta do onboarding inverteu: era "escolha
+até 2 que você NÃO quer", virou "escolha o que você QUER focar", sem teto.
+
+⚠️ **`areas_foco = '{}'` significa TODAS, não "nenhuma".** É o que grava o botão
+"quero estudar todas as matérias" e o default de quem nunca passou pelo
+onboarding. Ler como lista de inclusão literal deixa a trilha vazia para todo
+mundo.
+
+- **`slug = 'minha'`** é a trilha do próprio aluno, montada com `areas_foco`.
+  Não existe na tabela `trilhas` — `resolverTrilha()` resolve o slug.
+- O foco **não** recorta as trilhas do catálogo: quem abre a Civilista pediu
+  Civil explicitamente, e cruzar as duas listas devolveria trilha vazia.
+- As disciplinas válidas saem de `SELECT DISTINCT disciplina FROM temas`, nunca
+  de uma lista no código — foi uma lista chumbada (`trib` em vez de
+  `trib e proc trib`) que fez a Publicista prometer Tributário e devolver zero.
 
 - Catálogo em `temas` (79 registros) + `questions.tema_id`. A coluna legada
   `questions.tema` é texto livre com ~236 valores distintos para 238 questões —

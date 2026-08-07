@@ -11,7 +11,9 @@ React via CDN (sem bundler, sem npm). Arquivos `.jsx` servidos diretamente pelo 
 |---|---|---|
 | `data.js` | `window.AppData = { AREAS }`, `window.apiFetch` | Config de áreas + helper de API |
 | `auth.jsx` | `window.AuthFlow = { SplashScreen, RegisterFlow }` | Telas de login/cadastro |
-| `shell.jsx` | `window.Shell = { AppShell, Dashboard }` | Layout principal + dashboard |
+| `onboarding.jsx` | `window.Onboarding = { OnboardingFlow }` | Onboarding em 3 telas (foco por disciplina) |
+| `shell.jsx` | `window.Shell = { AppShell, Dashboard, StreakFlame, DisciplinaBolinha }` | Layout principal + dashboard |
+| `trilha.jsx` | `window.Trilha = { TrilhaPage }` | Trilha por disciplina |
 | `practice.jsx` | `window.Practice = { PracticeFlow }` | Fluxo de questões |
 | `stats.jsx` | `window.Stats = { StatsPage }` | Estatísticas |
 | `admin.jsx` | `window.Admin = { AdminPage }` | Painel admin |
@@ -48,13 +50,29 @@ Lê `oab_token` do `localStorage` automaticamente. Em caso de erro HTTP, faz `Pr
 ## Dados estáticos (data.js)
 
 ```js
-window.AppData.AREAS = {
-  civil, const, penal, trabalho, adm, etica, trib
-  // cada área: { id, label, icon, pillClass }
-}
+window.AppData.AREAS       // 13 áreas reais + alias legado `trib`
+window.AppData.DISCIPLINAS // as 13, sem o alias
+window.AppData.areaInfo(id) // lookup com fallback — nunca devolve undefined
+// cada área: { id, label, sigla, cor, icon, pillClass }
 ```
 
-`pillClass` mapeia para classes CSS como `area-pill-civil` — usar sempre esse campo nos chips de área.
+- `pillClass` mapeia para classes CSS como `area-pill-civil` — usar nos chips de área.
+- `sigla` + `cor` (08/08/2026) são a identidade visual da disciplina na trilha: bolinha
+  colorida com o nome dentro. **Cada disciplina tem uma cor só, em toda a aplicação** —
+  é o que permite reconhecer "PENAL" de relance. Emoji não servia: `⚖️` era Civil, Penal
+  e o fallback ao mesmo tempo.
+- Sempre `areaInfo(id)`, nunca `AREAS[id]` direto: disciplina nova no banco tem que
+  aparecer em cinza, não sumir da tela.
+
+## Trilha e onboarding (08/08/2026)
+
+`window.Shell.DisciplinaBolinha` é o componente compartilhado entre `onboarding.jsx`
+(tela 3) e `trilha.jsx`. A leitura de `window.Shell` acontece em tempo de render, então
+a ordem dos `<script>` no `index.html` não importa.
+
+O onboarding pergunta **o que o aluno quer focar** (inclusão), não o que ele quer
+excluir. A tela 2 chama `/trilhas/preview` sem `foco` para descobrir as disciplinas
+ordenadas por incidência e **pré-marca as 5 primeiras** — a lista não é chumbada aqui.
 
 ## CSS
 

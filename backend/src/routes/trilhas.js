@@ -22,44 +22,48 @@ function faixaDe(incidencia) {
   return FAIXAS.find((f) => incidencia >= f.min) || FAIXAS[FAIXAS.length - 1];
 }
 
+// Slug reservado: a trilha montada com o foco do próprio aluno. Não existe na
+// tabela `trilhas` — as áreas vêm de users.areas_foco.
+const SLUG_PESSOAL = 'minha';
+
+// Todas as disciplinas que hoje têm tema ativo. Sai do banco de propósito: uma
+// lista chumbada no código é o que fez a Publicista prometer Tributário e
+// devolver zero questões (o valor real é `trib e proc trib`, não `trib`).
+async function todasDisciplinas() {
+  const r = await pool.query('SELECT DISTINCT disciplina FROM temas WHERE ativo ORDER BY disciplina');
+  return r.rows.map((x) => x.disciplina);
+}
+
 // ── Rota pública ───────────────────────────────────────────────────────────
 // Fica ACIMA do requireAuth de propósito: é a tela 3 do onboarding, que mostra
 // a trilha montada antes de o aluno criar conta. Mover para baixo quebra o
 // fluxo inteiro, porque ali ainda não existe token.
-// GET /api/trilhas/preview?excluir=penal,adm
+// GET /api/trilhas/preview?foco=penal,adm
 router.get('/preview', async (req, res) => {
-  const excluidas = (req.query.excluir || '')
+  const foco = (req.query.foco || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
 
   try {
-    const trilhaRes = await pool.query(
-      'SELECT slug, nome, descricao, areas FROM trilhas ORDER BY ordem, id LIMIT 1'
-    );
-    const trilha = trilhaRes.rows[0];
-    if (!trilha) return res.status(404).json({ error: 'Nenhuma trilha cadastrada' });
+    // O preview é sobre o foco do aluno, não sobre uma trilha do catálogo: o
+    // universo é tudo que tem tema, e o recorte vem do que ele selecionou.
+    const universo = await todasDisciplinas();
 
     // userId 0 não existe: o preview é sempre "progresso zero", sem consultar aluno.
-    const faixas = await montarMapa(trilha.areas, 0, excluidas);
+    const faixas = await montarMapa(universo, 0, foco);
+    const disciplinas = agruparPorDisciplina(faixas);
 
     // Só o resumo — o preview é um cartão visual, não a trilha inteira.
     res.json({
-      trilha: { nome: trilha.nome, descricao: trilha.descricao },
-      excluidas,
-      faixas: faixas.map((f) => ({
-        faixa: f.faixa,
-        label: f.label,
-        disciplinas: f.disciplinas.map((d) => ({
-          disciplina: d.disciplina,
-          temas: d.temas.length,
-          incidencia_total: d.incidencia_total,
-        })),
+      foco,
+      disciplinas: disciplinas.map((d) => ({
+        disciplina: d.disciplina,
+        total_temas: d.total_temas,
+        incidencia_total: d.incidencia_total,
+        temas: d.temas.map((t) => ({ tema_id: t.tema_id, nome: t.nome, incidencia: t.incidencia, faixa: t.faixa })),
       })),
-      total_temas: faixas.reduce(
-        (s, f) => s + f.disciplinas.reduce((x, d) => x + d.temas.length, 0),
-        0
-      ),
+      total_temas: disciplinas.reduce((s, d) => s + d.total_temas, 0),
     });
   } catch (err) {
     console.error('GET /trilhas/preview error:', err.message);
@@ -71,10 +75,40 @@ router.get('/preview', async (req, res) => {
 // Premium segue valendo para os outros recursos (stats, simulados, tema escuro).
 router.use(requireAuth);
 
-// Disciplinas que o aluno pediu para não estudar (escolhidas no onboarding).
-async function excluidasDoUsuario(userId) {
-  const r = await pool.query('SELECT areas_excluidas FROM users WHERE id = $1', [userId]);
-  return r.rows[0]?.areas_excluidas || [];
+// Disciplinas que o aluno escolheu focar no onboarding. Vazio = todas.
+async function focoDoUsuario(userId) {
+  const r = await pool.query('SELECT areas_foco FROM users WHERE id = $1', [userId]);
+  return r.rows[0]?.areas_foco || [];
+}
+
+// Resolve o slug em { trilha, areas }. `minha` é a trilha do próprio aluno; os
+// outros slugs continuam vindo do catálogo.
+async function resolverTrilha(slug, userId) {
+  if (slug === SLUG_PESSOAL) {
+    const foco = await focoDoUsuario(userId);
+    const areas = foco.length ? foco : await todasDisciplinas();
+    return {
+      trilha: {
+        slug: SLUG_PESSOAL,
+        nome: 'Minha trilha',
+        descricao: 'Montada com as disciplinas que você escolheu focar.',
+        areas,
+      },
+      areas,
+      foco,
+    };
+  }
+
+  const r = await pool.query(
+    'SELECT slug, nome, descricao, areas, ordem FROM trilhas WHERE slug = $1',
+    [slug]
+  );
+  const trilha = r.rows[0];
+  if (!trilha) return null;
+  // O foco NÃO recorta as trilhas do catálogo: quem abre a Civilista pediu Civil
+  // explicitamente. Cruzar as duas listas devolveria trilha vazia para quem
+  // focou em outra coisa — o aluno escolheria uma trilha e receberia nada.
+  return { trilha, areas: trilha.areas, foco: [] };
 }
 
 // GET /api/trilhas — lista trilhas com contagem de questões disponíveis
@@ -131,11 +165,14 @@ router.get('/:slug/questoes', async (req, res) => {
  * anterior estiver concluída. Faixa em que a disciplina não tem tema nenhum é
  * pulada e nunca bloqueia.
  */
-async function montarMapa(areas, userId, excluidas = []) {
-  // A exclusão some da TRILHA e só dela: /questions/sortear e /sessions
-  // continuam sorteando de todas as áreas. Esconder a disciplina do estudo
-  // guiado é escolha do aluno; esconder da prova não é opção nossa.
-  const efetivas = areas.filter((a) => !excluidas.includes(a));
+async function montarMapa(areas, userId, foco = []) {
+  // O foco recorta a TRILHA e só ela: /questions/sortear e /sessions continuam
+  // sorteando de todas as áreas. Estreitar o estudo guiado é escolha do aluno;
+  // esconder da prova não é opção nossa.
+  //
+  // Foco vazio = todas. É o estado de quem clicou em "quero estudar todas" e o
+  // default de quem nunca passou pelo onboarding — nunca "trilha vazia".
+  const efetivas = foco.length ? areas.filter((a) => foco.includes(a)) : areas;
   if (!efetivas.length) return [];
 
   const incRes = await pool.query(
@@ -212,19 +249,57 @@ async function montarMapa(areas, userId, excluidas = []) {
   }).filter((f) => f.disciplinas.length > 0);
 }
 
-// GET /api/trilhas/:slug/mapa — trilha por faixa de incidência + progresso do usuário
+/**
+ * Vira o mapa do avesso: de faixa → disciplina para disciplina → temas.
+ *
+ * A progressão NÃO muda — os temas continuam saindo na ordem das faixas (alta
+ * antes de média antes de pontual) e o `bloqueado` de cada um é o mesmo que
+ * `montarMapa` calculou. O que muda é só quem é a seção de primeiro nível: o
+ * aluno pensa "quero estudar Penal", não "quero estudar a faixa alta".
+ */
+function agruparPorDisciplina(faixas) {
+  const porDisc = new Map();
+
+  // `faixas` já vem na ordem de progressão, então basta empilhar: os temas de
+  // alta incidência entram primeiro na lista de cada disciplina.
+  for (const f of faixas) {
+    for (const d of f.disciplinas) {
+      if (!porDisc.has(d.disciplina)) porDisc.set(d.disciplina, []);
+      porDisc.get(d.disciplina).push(...d.temas);
+    }
+  }
+
+  return [...porDisc.entries()]
+    .map(([disciplina, temas]) => {
+      const concluidos = temas.filter((t) => t.concluido).length;
+      return {
+        disciplina,
+        temas,
+        total_temas: temas.length,
+        concluidos,
+        pct: temas.length ? Math.round((concluidos / temas.length) * 100) : 0,
+        incidencia_total: Math.round(temas.reduce((s, t) => s + t.incidencia, 0) * 100) / 100,
+        // A disciplina só está travada se NENHUM tema dela estiver aberto — o
+        // caminho sempre começa pelo que mais cai, que nunca vem bloqueado.
+        bloqueado: temas.every((t) => t.bloqueado),
+      };
+    })
+    .sort((a, b) => b.incidencia_total - a.incidencia_total);
+}
+
+// GET /api/trilhas/:slug/mapa — disciplina → temas + progresso do usuário.
+// `slug = minha` é a trilha do foco do aluno.
 router.get('/:slug/mapa', async (req, res) => {
   try {
-    const trilhaRes = await pool.query(
-      'SELECT slug, nome, descricao, areas, ordem FROM trilhas WHERE slug = $1',
-      [req.params.slug]
-    );
-    const trilha = trilhaRes.rows[0];
-    if (!trilha) return res.status(404).json({ error: 'Trilha não encontrada' });
+    const alvo = await resolverTrilha(req.params.slug, req.user.userId);
+    if (!alvo) return res.status(404).json({ error: 'Trilha não encontrada' });
 
-    const excluidas = await excluidasDoUsuario(req.user.userId);
-    const faixas = await montarMapa(trilha.areas, req.user.userId, excluidas);
-    res.json({ trilha, faixas, excluidas });
+    const faixas = await montarMapa(alvo.areas, req.user.userId, alvo.foco);
+    res.json({
+      trilha: alvo.trilha,
+      disciplinas: agruparPorDisciplina(faixas),
+      foco: alvo.foco,
+    });
   } catch (err) {
     console.error('GET /trilhas/:slug/mapa error:', err.message);
     res.status(500).json({ error: 'Erro ao montar a trilha' });
@@ -243,20 +318,14 @@ router.get('/:slug/tema/:temaId/questoes', async (req, res) => {
   }
 
   try {
-    const trilhaRes = await pool.query('SELECT areas FROM trilhas WHERE slug = $1', [
-      req.params.slug,
-    ]);
-    const trilha = trilhaRes.rows[0];
+    const trilha = await resolverTrilha(req.params.slug, req.user.userId);
     if (!trilha) return res.status(404).json({ error: 'Trilha não encontrada' });
 
-    const excluidas = await excluidasDoUsuario(req.user.userId);
-    const faixas = await montarMapa(trilha.areas, req.user.userId, excluidas);
+    const faixas = await montarMapa(trilha.areas, req.user.userId, trilha.foco);
     let alvo = null;
-    for (const f of faixas) {
-      for (const d of f.disciplinas) {
-        const t = d.temas.find((x) => x.tema_id === temaId);
-        if (t) alvo = t;
-      }
+    for (const d of agruparPorDisciplina(faixas)) {
+      const t = d.temas.find((x) => x.tema_id === temaId);
+      if (t) alvo = t;
     }
     if (!alvo) return res.status(404).json({ error: 'Tema não pertence a esta trilha' });
     if (alvo.bloqueado) {

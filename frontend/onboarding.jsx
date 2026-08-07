@@ -6,43 +6,87 @@ const { useState: useStateOnb, useEffect: useEffectOnb } = React;
 
    O fluxo antigo (RegisterFlow, 4 etapas) pedia nome, e-mail e senha de 8
    caracteres logo na primeira tela — fricção máxima antes de entregar valor.
-   Aqui o aluno vê a proposta, escolhe o que NÃO quer estudar e vê a trilha
-   montada; a conta só é pedida no último clique.
+   Aqui o aluno vê a proposta, escolhe o que QUER focar e vê a trilha montada;
+   a conta só é pedida no último clique.
+
+   ⚠️ A lógica inverteu em 2026-08-08. Antes era exclusão ("escolha até 2 que
+   você NÃO quer"); agora é inclusão ("escolha o que você QUER focar"), sem
+   teto. Quem mexer aqui precisa saber: `areas_foco = []` significa TODAS, não
+   "nenhuma" — é o que o botão "quero estudar todas as matérias" grava.
    ========================================================= */
 
-const MAX_EXCLUIDAS = 2;
-const METAS = [
-  { valor: 5,  label: '5 questões',  sub: 'ritmo leve' },
-  { valor: 10, label: '10 questões', sub: 'recomendado' },
-  { valor: 20, label: '20 questões', sub: 'intensivo' },
+// Quantas disciplinas já vêm marcadas. Não são fixas: são as N de maior
+// incidência, calculadas pelo servidor. Tela em branco obrigaria o aluno a
+// decidir antes de saber o que pesa na prova.
+const PRE_SELECIONADAS = 5;
+
+// Abaixo disso a tela 3 avisa que a trilha ficou curta. Não bloqueia: focar 1
+// disciplina é escolha legítima, só merece um aviso antes de virar surpresa.
+const TRILHA_CURTA = 10;
+
+const FRASES_MONTAGEM = [
+  'Lendo a incidência dos últimos exames…',
+  'Ordenando seus temas pelo que mais cai…',
+  'Montando sua trilha…',
 ];
+
+// A tela de montagem espera a resposta real do servidor, mas nunca some antes
+// deste tempo — resposta instantânea pisca e o aluno não lê o que aconteceu.
+const MONTAGEM_MIN_MS = 1600;
 
 function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
   const [tela, setTela] = useStateOnb(1);
-  const [excluidas, setExcluidas] = useStateOnb([]);
-  const [meta, setMeta] = useStateOnb(10);
+  const [foco, setFoco] = useStateOnb([]);
+  const [catalogo, setCatalogo] = useStateOnb(null); // disciplinas + incidência, do servidor
   const [preview, setPreview] = useStateOnb(null);
   const [criandoConta, setCriandoConta] = useStateOnb(false);
+  const [aberta, setAberta] = useStateOnb(null); // disciplina expandida na tela 3
 
-  const { DISCIPLINAS, AREAS } = window.AppData;
+  const { areaInfo } = window.AppData;
+
+  // Catálogo real: quais disciplinas existem e quanto cada uma cai. Sai do
+  // /preview sem foco, que já devolve tudo ordenado por incidência — evita um
+  // endpoint novo só para listar chips.
+  useEffectOnb(() => {
+    if (tela !== 2 || catalogo) return;
+    window.apiFetch('/trilhas/preview')
+      .then((d) => {
+        const lista = d.disciplinas || [];
+        setCatalogo(lista);
+        // Pré-seleção: as de maior incidência já marcadas. O aluno tira o que
+        // não quer e soma as que caem menos, em vez de começar do zero.
+        setFoco((atual) => (atual.length ? atual : lista.slice(0, PRE_SELECIONADAS).map((x) => x.disciplina)));
+      })
+      .catch(() => setCatalogo([]));
+  }, [tela, catalogo]);
 
   // O preview roda sem token — é justamente o ponto do fluxo em que ainda não
   // existe conta. Se esta chamada passar a exigir auth, a tela 3 fica vazia.
   useEffectOnb(() => {
-    if (tela !== 3) return;
-    const qs = excluidas.length ? `?excluir=${encodeURIComponent(excluidas.join(','))}` : '';
-    window.apiFetch(`/trilhas/preview${qs}`)
-      .then(setPreview)
-      .catch(() => setPreview({ faixas: [], total_temas: 0 }));
-  }, [tela, excluidas]);
+    if (tela !== 'montando') return;
+    let vivo = true;
+    const inicio = Date.now();
+    const qs = foco.length ? `?foco=${encodeURIComponent(foco.join(','))}` : '';
 
-  const alternar = (id) => {
-    setExcluidas((atual) => {
-      if (atual.includes(id)) return atual.filter((x) => x !== id);
-      if (atual.length >= MAX_EXCLUIDAS) return atual; // trava no limite
-      return [...atual, id];
-    });
-  };
+    window.apiFetch(`/trilhas/preview${qs}`)
+      .then((d) => d)
+      .catch(() => ({ disciplinas: [], total_temas: 0 }))
+      .then((d) => {
+        const espera = Math.max(0, MONTAGEM_MIN_MS - (Date.now() - inicio));
+        setTimeout(() => {
+          if (!vivo) return;
+          setPreview(d);
+          setTela(3);
+        }, espera);
+      });
+
+    return () => { vivo = false; };
+  }, [tela, foco]);
+
+  const alternar = (id) =>
+    setFoco((atual) => (atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id]));
+
+  const marcarTodas = () => setFoco((catalogo || []).map((d) => d.disciplina));
 
   // ── Tela 1 — o que o app faz ─────────────────────────────────────────────
   if (tela === 1) {
@@ -51,15 +95,20 @@ function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
         <div className="onb-card onb-card-hero">
           <div className="onb-logo">⚖️</div>
           <h1 className="onb-title">Aprovado na <em>OAB</em></h1>
+          <div className="onb-tagline">Estude apenas o que você precisa!</div>
+
           <p className="onb-pitch">
-            Gratuito e movido a IA. Cruzamos <strong>o que mais cai na prova</strong> com o que
-            você já sabe, e montamos uma trilha que ataca só o que falta.
+            Somos um aplicativo gratuito que te ajuda a estudar para a prova da OAB de modo
+            inteligente.
           </p>
-          <ul className="onb-bullets">
-            <li>📊 Incidência real dos últimos exames, tema a tema</li>
-            <li>🎯 Você estuda o que pesa, não o programa inteiro</li>
-            <li>🔥 Uma meta por dia — e uma sequência para não parar</li>
-          </ul>
+          <p className="onb-pitch">
+            Utilizando I.A relacionamos o que estatisticamente cai nas provas com o seu
+            conhecimento.
+          </p>
+          <p className="onb-pitch onb-pitch-forte">
+            Você não precisa saber de tudo para passar na OAB. Você precisa apenas passar na prova!
+          </p>
+
           <button className="btn-primary onb-cta" onClick={() => setTela(2)}>Comece agora</button>
           <button className="btn btn-quiet onb-secundario" onClick={onCancel}>Já tenho conta</button>
         </div>
@@ -67,107 +116,120 @@ function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
     );
   }
 
-  // ── Tela 2 — o que o aluno NÃO quer estudar ──────────────────────────────
+  // ── Tela 2 — o que o aluno QUER focar ────────────────────────────────────
   if (tela === 2) {
-    const nenhuma = excluidas.length === 0;
+    const lista = catalogo || [];
+    const todasMarcadas = lista.length > 0 && foco.length === lista.length;
+
     return (
       <div className="onb-wrap fade-up">
         <div className="onb-card">
           <button className="onb-voltar" onClick={() => setTela(1)}>← Voltar</button>
-          <h2 className="onb-h2">O que você prefere deixar de fora?</h2>
+          <h2 className="onb-h2">No que você quer focar?</h2>
           <p className="onb-sub">
-            Selecione até {MAX_EXCLUIDAS} disciplinas que você não quer estudar. Elas somem da sua
-            trilha — mas continuam aparecendo na prática livre, porque ainda caem na prova.
+            Já deixamos marcadas as {PRE_SELECIONADAS} matérias que mais caem no exame. Tire o que
+            não quiser e some as outras — sua trilha é montada só com o que ficar aqui. A prática
+            livre continua com todas as questões.
           </p>
 
+          <button
+            className={`onb-todas ${todasMarcadas ? 'is-on' : ''}`}
+            onClick={marcarTodas}
+            disabled={!lista.length}
+          >
+            Quero estudar todas as matérias
+          </button>
+
+          {!catalogo && <div className="onb-carregando">Carregando disciplinas…</div>}
+
           <div className="onb-chips">
-            {DISCIPLINAS.map((d) => {
-              const ativa = excluidas.includes(d.id);
-              const cheio = !ativa && excluidas.length >= MAX_EXCLUIDAS;
+            {lista.map((d) => {
+              const a = areaInfo(d.disciplina);
+              const ativa = foco.includes(d.disciplina);
               return (
                 <button
-                  key={d.id}
-                  className={`onb-chip ${ativa ? 'is-on' : ''} ${cheio ? 'is-off' : ''}`}
-                  onClick={() => alternar(d.id)}
-                  disabled={cheio}
+                  key={d.disciplina}
+                  className={`onb-chip ${ativa ? 'is-on' : ''}`}
+                  style={ativa ? { background: a.cor, borderColor: a.cor } : { borderColor: a.cor, color: a.cor }}
+                  onClick={() => alternar(d.disciplina)}
                 >
-                  <span>{d.icon}</span> {d.label} {ativa && <span className="onb-x">✕</span>}
+                  <span className="onb-chip-dot" style={{ background: a.cor }} />
+                  {a.label}
+                  <span className="onb-chip-inc">{formatarIncidencia(d.incidencia_total)}/prova</span>
                 </button>
               );
             })}
           </div>
 
           <div className="onb-contador">
-            {nenhuma
-              ? 'Nenhuma excluída — você vai estudar tudo.'
-              : `${excluidas.length} de ${MAX_EXCLUIDAS} excluídas`}
+            {foco.length === 0
+              ? 'Escolha ao menos uma matéria para montar sua trilha.'
+              : `${foco.length} de ${lista.length} matérias selecionadas`}
           </div>
 
-          <div className="onb-meta">
-            <div className="onb-meta-titulo">Quantas questões por dia?</div>
-            <div className="onb-meta-ops">
-              {METAS.map((m) => (
-                <button
-                  key={m.valor}
-                  className={`onb-meta-op ${meta === m.valor ? 'is-on' : ''}`}
-                  onClick={() => setMeta(m.valor)}
-                >
-                  <strong>{m.label}</strong>
-                  <span>{m.sub}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <button className="btn-primary onb-cta" onClick={() => setTela(3)}>
-            {nenhuma ? 'Quero estudar todas' : 'Comece agora'}
+          <button
+            className="btn-primary onb-cta"
+            disabled={foco.length === 0}
+            onClick={() => setTela('montando')}
+          >
+            Montar minha trilha
           </button>
         </div>
       </div>
     );
   }
 
-  // ── Tela 3 — trilha pronta ───────────────────────────────────────────────
+  // ── Tela de montagem ─────────────────────────────────────────────────────
+  if (tela === 'montando') return <TelaMontando />;
+
+  // ── Tela 3 — trilha pronta, por disciplina ───────────────────────────────
+  const disciplinas = preview?.disciplinas || [];
+  const totalTemas = preview?.total_temas || 0;
+  const curta = totalTemas > 0 && totalTemas < TRILHA_CURTA;
+
   return (
     <div className="onb-wrap fade-up">
-      <div className="onb-card">
-        <button className="onb-voltar" onClick={() => setTela(2)}>← Voltar</button>
+      <div className="onb-card onb-card-largo">
+        <button className="onb-voltar" onClick={() => setTela(2)}>← Ajustar matérias</button>
         <h2 className="onb-h2">Pronto! Sua trilha está montada.</h2>
         <p className="onb-sub">
-          {preview
-            ? `${preview.total_temas} temas, ordenados pelo quanto cada um cai na prova.`
-            : 'Montando sua trilha…'}
+          {totalTemas} temas nas matérias que você escolheu, do que mais cai para o que cai menos.
         </p>
 
-        <div className="onb-mapa">
-          {(preview?.faixas || []).map((f) => (
-            <div key={f.faixa} className={`onb-faixa onb-faixa-${f.faixa}`}>
-              <div className="onb-faixa-label">{f.label}</div>
-              <div className="onb-faixa-grid">
-                {f.disciplinas.map((d) => {
-                  const a = AREAS[d.disciplina] || { label: d.disciplina, icon: '⚖️' };
-                  return (
-                    <div key={d.disciplina} className="onb-modulo" title={`${a.label} · ${d.temas} temas`}>
-                      <span className="onb-modulo-icon">{a.icon}</span>
-                      <span className="onb-modulo-n">{d.temas}</span>
-                    </div>
-                  );
-                })}
+        <div className="trilha-estacoes">
+          {disciplinas.map((d, i) => {
+            const a = areaInfo(d.disciplina);
+            const aberto = aberta === d.disciplina;
+            return (
+              <div key={d.disciplina} className="trilha-estacao">
+                <div className="trilha-parada">
+                  <window.Shell.DisciplinaBolinha
+                    area={d.disciplina}
+                    pct={d.pct}
+                    ativa={aberto}
+                    onClick={() => setAberta(aberto ? null : d.disciplina)}
+                  />
+                  <div className="trilha-parada-label">{a.label}</div>
+                  <div className="trilha-parada-sub">{d.total_temas} temas</div>
+                </div>
+                {i < disciplinas.length - 1 && <div className="trilha-conector" />}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
-        {excluidas.length > 0 && (
-          <div className="onb-excluidas-nota">
-            Fora da trilha: {excluidas.map((e) => (AREAS[e]?.label || e)).join(' e ')}
+        {aberta && <TemasDaDisciplina disc={disciplinas.find((d) => d.disciplina === aberta)} />}
+
+        {curta && (
+          <div className="onb-aviso">
+            Sua trilha tem só {totalTemas} temas — dá para incluir mais matérias e ganhar
+            cobertura. <button className="onb-link" onClick={() => setTela(2)}>Ajustar</button>
           </div>
         )}
 
         {criandoConta ? (
           <ContaForm
-            excluidas={excluidas}
-            meta={meta}
+            foco={foco}
             onCancel={() => setCriandoConta(false)}
             onComplete={onComplete}
             onEmailPending={onEmailPending}
@@ -185,8 +247,51 @@ function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
   );
 }
 
-/* Conta só no fim — as escolhas do onboarding vão junto no mesmo POST. */
-function ContaForm({ excluidas, meta, onCancel, onComplete, onEmailPending }) {
+/* Uma casa decimal, vírgula: "2,3 questões" lê melhor que "2.30". */
+function formatarIncidencia(n) {
+  return `~${Number(n || 0).toFixed(1).replace('.', ',')}q`;
+}
+
+/* A espera é real (o preview está sendo montado), com piso de tempo para dar
+   para ler. Trocar por um setTimeout puro seria mentira de interface. */
+function TelaMontando() {
+  const [i, setI] = useStateOnb(0);
+
+  useEffectOnb(() => {
+    const t = setInterval(() => setI((x) => (x + 1) % FRASES_MONTAGEM.length), 700);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div className="onb-wrap">
+      <div className="onb-card onb-card-hero">
+        <div className="onb-spinner" />
+        <div className="onb-montando-txt">{FRASES_MONTAGEM[i]}</div>
+      </div>
+    </div>
+  );
+}
+
+function TemasDaDisciplina({ disc }) {
+  if (!disc) return null;
+  return (
+    <div className="trilha-temas fade-up">
+      {disc.temas.map((t) => (
+        <div key={t.tema_id} className="trilha-tema">
+          <span className="trilha-tema-nome">{t.nome}</span>
+          <span className="trilha-tema-inc">{formatarIncidencia(t.incidencia)}/prova</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* Conta só no fim — as escolhas do onboarding vão junto no mesmo POST.
+   O seletor de "questões por dia" saiu daqui em 2026-08-08 para encurtar o
+   fluxo; a meta fica no default e é editável em Minha conta. A ideia virou o
+   "modo desafio" (mais questões = mais moedas) — issue #26, não foi perda
+   acidental. */
+function ContaForm({ foco, onCancel, onComplete, onEmailPending }) {
   const [form, setForm] = useStateOnb({ nome: '', email: '', senha: '' });
   const [erro, setErro] = useStateOnb(null);
   const [enviando, setEnviando] = useStateOnb(false);
@@ -203,8 +308,7 @@ function ContaForm({ excluidas, meta, onCancel, onComplete, onEmailPending }) {
           nome: form.nome.trim(),
           email: form.email.trim(),
           password: form.senha,
-          areas_excluidas: excluidas,
-          meta_questoes_dia: meta,
+          areas_foco: foco,
         }),
       });
       // O register hoje SEMPRE devolve { requiresVerification, email } — nunca

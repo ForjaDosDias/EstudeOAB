@@ -994,34 +994,76 @@
 .onb-ctas { display: flex; gap: 10px; margin-top: 18px; }
 .onb-ctas .btn, .onb-ctas .btn-primary { flex: 1; }
 
+.onb-tagline { font-size: 15px; font-weight: 700; color: var(--bordo); margin-bottom: 18px; }
+.onb-pitch-forte { font-weight: 700; color: var(--text-primary); }
+.onb-card-largo { max-width: 720px; }
+
+/* Chips de foco. A cor de cada matéria vem inline do AppData.AREAS — o CSS só
+   define a forma, senão seriam 13 regras que precisariam ser mantidas em dois
+   lugares ao mesmo tempo. */
 .onb-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .onb-chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; border-radius: 30px; border: 1.5px solid var(--border-strong); background: transparent; color: var(--text-secondary); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
-.onb-chip:hover:not(:disabled) { border-color: var(--bordo); color: var(--bordo); }
-.onb-chip.is-on { background: var(--bordo); border-color: var(--bordo); color: #fff; }
-.onb-chip.is-off { opacity: .38; cursor: not-allowed; }
-.onb-x { font-size: 11px; opacity: .8; }
+.onb-chip.is-on { color: #fff; }
+.onb-chip.is-on .onb-chip-dot { background: #fff !important; }
+.onb-chip.is-on .onb-chip-inc { color: rgba(255,255,255,.75); }
+.onb-chip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.onb-chip-inc { font-size: 10px; opacity: .8; font-weight: 600; }
 .onb-contador { font-size: 12px; color: var(--text-muted); margin-top: 12px; }
+.onb-carregando { font-size: 13px; color: var(--text-muted); padding: 10px 0; }
 
-.onb-meta { margin-top: 24px; }
-.onb-meta-titulo { font-size: 14px; font-weight: 700; margin-bottom: 10px; }
-.onb-meta-ops { display: flex; gap: 8px; }
-.onb-meta-op { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 12px 8px; border-radius: 12px; border: 1.5px solid var(--border-strong); background: transparent; cursor: pointer; font-family: inherit; color: var(--text-secondary); }
-.onb-meta-op strong { font-size: 14px; }
-.onb-meta-op span { font-size: 11px; color: var(--text-muted); }
-.onb-meta-op.is-on { border-color: var(--bordo); color: var(--bordo); }
+.onb-todas { width: 100%; margin-bottom: 14px; padding: 11px; border-radius: 12px; border: 1.5px dashed var(--border-strong); background: transparent; color: var(--text-secondary); font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; transition: all .15s; }
+.onb-todas:hover:not(:disabled) { border-color: var(--bordo); color: var(--bordo); }
+.onb-todas.is-on { border-style: solid; border-color: var(--green-dark); color: var(--green-dark); background: var(--green-wash); }
+.onb-todas:disabled { opacity: .45; cursor: default; }
 
-.onb-mapa { display: flex; flex-direction: column; gap: 14px; margin: 8px 0 18px; }
-.onb-faixa-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); margin-bottom: 8px; }
-.onb-faixa-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-.onb-modulo { width: 52px; height: 52px; border-radius: 13px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; background: var(--bg-base); border: 1.5px solid var(--border-strong); }
-.onb-faixa-alta .onb-modulo { border-color: var(--bordo); }
-.onb-faixa-media .onb-modulo { border-color: var(--amarelo-dark); }
-.onb-modulo-icon { font-size: 18px; line-height: 1; }
-.onb-modulo-n { font-size: 10px; color: var(--text-muted); font-weight: 700; }
-.onb-excluidas-nota { font-size: 12px; color: var(--text-muted); padding: 9px 12px; background: var(--bg-base); border-radius: 9px; }
+.onb-aviso { font-size: 12.5px; color: var(--text-secondary); padding: 10px 13px; background: var(--amarelo-wash); border: 1px solid var(--amarelo); border-radius: 10px; margin-top: 14px; }
+.onb-link { background: none; border: none; padding: 0; font: inherit; font-weight: 700; color: var(--bordo); cursor: pointer; text-decoration: underline; }
+
+.onb-spinner { width: 34px; height: 34px; margin: 0 auto 16px; border: 3px solid var(--border-strong); border-top-color: var(--bordo); border-radius: 50%; animation: onb-gira .8s linear infinite; }
+@keyframes onb-gira { to { transform: rotate(360deg); } }
+.onb-montando-txt { font-size: 14px; color: var(--text-muted); }
 
 .onb-conta { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
 .onb-conta-titulo { font-size: 15px; font-weight: 700; }
+
+/* ─── Trilha por disciplina: bolinhas e estações (08/08/2026) ─────────────── */
+
+.disc-bolinha { border-radius: 50%; display: flex; align-items: center; justify-content: center; position: relative; color: #fff; font-weight: 800; flex-shrink: 0; transition: transform .15s, box-shadow .15s; }
+.disc-bolinha:hover { transform: scale(1.06); }
+.disc-md { width: 56px; height: 56px; }
+.disc-sm { width: 40px; height: 40px; }
+.disc-sigla { font-size: 10px; letter-spacing: .3px; text-align: center; line-height: 1.1; padding: 0 3px; }
+.disc-sm .disc-sigla { font-size: 8px; }
+.disc-bolinha.is-active { box-shadow: 0 0 0 3px var(--bg-base), 0 0 0 5px currentColor; }
+.disc-bolinha.is-locked { opacity: .45; }
+.disc-bolinha.is-locked:hover { transform: none; }
+.disc-selo { position: absolute; bottom: -3px; right: -3px; width: 18px; height: 18px; border-radius: 50%; background: var(--bg-surface); color: var(--text-primary); font-size: 10px; display: flex; align-items: center; justify-content: center; }
+
+/* Trilha horizontal com scroll: em telas estreitas o aluno arrasta, e não
+   perde as matérias do fim da fila num wrap silencioso. */
+.trilha-estacoes { display: flex; align-items: flex-start; overflow-x: auto; padding: 6px 2px 10px; gap: 0; }
+.trilha-estacao { display: flex; align-items: flex-start; }
+.trilha-parada { display: flex; flex-direction: column; align-items: center; width: 104px; gap: 5px; }
+.trilha-parada-label { font-size: 11px; font-weight: 600; color: var(--text-secondary); text-align: center; line-height: 1.25; }
+.trilha-parada-sub { font-size: 10.5px; color: var(--text-muted); }
+.trilha-parada-barra { width: 52px; height: 3px; border-radius: 2px; background: var(--border-strong); overflow: hidden; }
+.trilha-parada-barra-fill { height: 100%; border-radius: 2px; transition: width .3s; }
+.trilha-conector { width: 26px; height: 3px; border-radius: 2px; background: var(--border-strong); margin-top: 27px; flex-shrink: 0; }
+
+.trilha-temas { margin-top: 14px; border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; }
+.trilha-tema { display: flex; align-items: center; gap: 10px; padding: 9px 13px; border-bottom: 1px solid var(--border-strong); font-size: 12.5px; }
+.trilha-tema:last-child { border-bottom: none; }
+.trilha-tema-nome { flex: 1; line-height: 1.35; }
+.trilha-tema-inc { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+/* Meta diária no painel de conta */
+.profile-hint { font-size: 12.5px; color: var(--text-muted); margin-bottom: 10px; }
+.meta-ops { display: flex; gap: 8px; }
+.meta-op { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 11px 6px; border-radius: 12px; border: 1.5px solid var(--border-strong); background: transparent; cursor: pointer; font-family: inherit; color: var(--text-secondary); }
+.meta-op strong { font-size: 15px; }
+.meta-op span { font-size: 10px; color: var(--text-muted); }
+.meta-op.is-on { border-color: var(--bordo); color: var(--bordo); }
+.meta-op:disabled { opacity: .6; cursor: default; }
 
 /* Streak com dados reais */
 .streak-meta { margin-top: 14px; }

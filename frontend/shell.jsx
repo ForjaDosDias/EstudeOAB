@@ -379,7 +379,37 @@ function UserProfilePanel({ user, onClose, onUserUpdate }) {
   const [senhaErro,     setSenhaErro]     = useStateShell(null);
   const [senhaOk,       setSenhaOk]       = useStateShell(false);
 
+  // Meta diária. Passou a morar aqui em 2026-08-08: o seletor de questões/dia
+  // saiu da tela 2 do onboarding para encurtar o fluxo, e sem este controle a
+  // meta ficaria presa no default 10 — sendo que o streak inteiro depende dela.
+  const [meta,        setMeta]        = useStateShell(user?.metaQuestoesDia ?? 10);
+  const [metaLoading, setMetaLoading] = useStateShell(false);
+  const [metaErro,    setMetaErro]    = useStateShell(null);
+  const [metaOk,      setMetaOk]      = useStateShell(false);
+
   const dadosAlterado = nome.trim() !== (user?.nome || '') || email.trim() !== (user?.email || '');
+
+  const saveMeta = async (valor) => {
+    setMeta(valor);
+    setMetaLoading(true); setMetaErro(null); setMetaOk(false);
+    try {
+      const res = await window.apiFetch('/auth/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({ meta_questoes_dia: valor }),
+      });
+      localStorage.setItem('oab_token', res.token);
+      onUserUpdate?.(res.user);
+      setMetaOk(true);
+      setTimeout(() => setMetaOk(false), 3000);
+    } catch (err) {
+      // 409 META_JA_CONTADA: baixar a meta depois de bater a de hoje daria
+      // streak de graça. O servidor recusa; aqui a UI volta ao valor real.
+      setMeta(user?.metaQuestoesDia ?? 10);
+      setMetaErro(err.error || 'Erro ao salvar a meta');
+    } finally {
+      setMetaLoading(false);
+    }
+  };
 
   const saveDados = async () => {
     setDadosLoading(true);
@@ -454,6 +484,28 @@ function UserProfilePanel({ user, onClose, onUserUpdate }) {
             </button>
             {dadosOk && <span className="profile-ok">✓ Salvo com sucesso</span>}
           </div>
+        </div>
+
+        <div className="profile-section">
+          <div className="profile-section-title">Meta diária</div>
+          <div className="profile-hint">
+            Quantas questões por dia mantêm sua sequência acesa.
+          </div>
+          <div className="meta-ops">
+            {[5, 10, 20, 30].map((v) => (
+              <button
+                key={v}
+                className={`meta-op ${meta === v ? 'is-on' : ''}`}
+                disabled={metaLoading}
+                onClick={() => saveMeta(v)}
+              >
+                <strong>{v}</strong>
+                <span>{v === 5 ? 'leve' : v === 10 ? 'recomendado' : v === 20 ? 'intensivo' : 'pesado'}</span>
+              </button>
+            ))}
+          </div>
+          {metaErro && <div className="login-error" style={{ marginTop: 12 }}><span>✕</span> {metaErro}</div>}
+          {metaOk && <span className="profile-ok">✓ Meta atualizada</span>}
         </div>
 
         <div className="profile-section">
@@ -603,4 +655,34 @@ function StreakFlame({ user }) {
   );
 }
 
-window.Shell = { AppShell, Dashboard, StreakFlame };
+/* =========================================================
+   Bolinha de disciplina — a peça visual da trilha.
+
+   Uma disciplina tem sempre a mesma cor e a mesma sigla, no onboarding e
+   dentro do app. É o que permite o aluno reconhecer "PENAL" de relance, o que
+   um emoji genérico nunca deu: "⚖️" servia para Civil, Penal e o fallback.
+
+   Usada por onboarding.jsx e trilha.jsx via window.Shell — a leitura acontece
+   em tempo de render, então a ordem dos <script> do index.html não importa.
+   ========================================================= */
+function DisciplinaBolinha({ area, pct = 0, estado = 'aberta', tamanho = 'md', onClick, ativa }) {
+  const a = window.AppData.areaInfo(area);
+  const clicavel = typeof onClick === 'function' && estado !== 'bloqueada';
+  const selo = estado === 'bloqueada' ? '🔒' : estado === 'concluida' ? '✓' : '';
+
+  return (
+    <div
+      className={`disc-bolinha disc-${tamanho} ${estado === 'bloqueada' ? 'is-locked' : ''} ${ativa ? 'is-active' : ''}`}
+      style={{ background: a.cor, cursor: clicavel ? 'pointer' : 'default' }}
+      onClick={clicavel ? onClick : undefined}
+      title={`${a.label}${pct ? ` · ${pct}% concluído` : ''}`}
+      role={clicavel ? 'button' : undefined}
+      aria-label={a.label}
+    >
+      <span className="disc-sigla">{a.sigla}</span>
+      {selo && <span className="disc-selo">{selo}</span>}
+    </div>
+  );
+}
+
+window.Shell = { AppShell, Dashboard, StreakFlame, DisciplinaBolinha };

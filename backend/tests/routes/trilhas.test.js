@@ -54,25 +54,56 @@ const perfRows = {
   ],
 };
 
-function mockMapa(temas = temasRows, perf = perfRows, excluidas = []) {
-  // O filtro de disciplina acontece no SQL (`WHERE t.disciplina = ANY($1)`).
-  // O mock precisa imitar isso, senão o teste de exclusão afirmaria algo que
-  // ele não consegue provar — devolveria as linhas excluídas de qualquer jeito.
-  const filtradas = { rows: temas.rows.filter((t) => !excluidas.includes(t.disciplina)) };
+// O filtro de disciplina acontece no SQL (`WHERE t.disciplina = ANY($1)`). O
+// mock precisa imitar isso, senão o teste de foco afirmaria algo que não
+// consegue provar — devolveria as disciplinas de fora do foco de qualquer jeito.
+function filtrar(temas, disciplinas) {
+  if (!disciplinas) return temas;
+  return { rows: temas.rows.filter((t) => disciplinas.includes(t.disciplina)) };
+}
+
+/** Trilha do catálogo: o foco do aluno NÃO recorta (ele pediu essa trilha). */
+function mockMapaCatalogo(temas = temasRows, perf = perfRows) {
   pool.query
-    .mockResolvedValueOnce({ rows: [fakeTrilha] }) // lookup da trilha
-    .mockResolvedValueOnce({ rows: [{ areas_excluidas: excluidas }] }) // exclusões do aluno
-    .mockResolvedValueOnce(filtradas) // incidência por tema
-    .mockResolvedValueOnce(perf); // progresso do aluno
+    .mockResolvedValueOnce({ rows: [fakeTrilha] }) // resolverTrilha
+    .mockResolvedValueOnce(temas)                  // incidência por tema
+    .mockResolvedValueOnce(perf);                  // progresso do aluno
+}
+
+/** Trilha pessoal (`minha`): as áreas vêm de users.areas_foco. */
+function mockMapaPessoal(foco, temas = temasRows, perf = perfRows) {
+  pool.query.mockResolvedValueOnce({ rows: [{ areas_foco: foco }] }); // focoDoUsuario
+  if (!foco.length) {
+    // foco vazio = todas: o servidor busca o universo de disciplinas ativas
+    pool.query.mockResolvedValueOnce({
+      rows: [...new Set(temas.rows.map((t) => t.disciplina))].map((disciplina) => ({ disciplina })),
+    });
+  }
+  pool.query
+    .mockResolvedValueOnce(filtrar(temas, foco.length ? foco : null))
+    .mockResolvedValueOnce(perf);
 }
 
 const get = (url) => request(app).get(url).set('Authorization', `Bearer ${token()}`);
 
+/** Achata o mapa em disciplina → [tema_id], para asserções legíveis. */
+function porDisciplina(body) {
+  return Object.fromEntries(body.disciplinas.map((d) => [d.disciplina, d.temas.map((t) => t.tema_id)]));
+}
+
+function acharTema(body, temaId) {
+  for (const d of body.disciplinas) {
+    const t = d.temas.find((x) => x.tema_id === temaId);
+    if (t) return t;
+  }
+  return null;
+}
+
 // resetAllMocks, não clearAllMocks: o `clear` zera as chamadas registradas mas
 // NÃO esvazia a fila do mockResolvedValueOnce. Testes cujo caminho retorna cedo
-// (ex.: aluno que exclui todas as disciplinas) consomem menos respostas do que
-// enfileiraram, e a sobra vaza para o teste seguinte — que falha por um motivo
-// que não tem nada a ver com ele.
+// (ex.: foco que não casa com nenhuma disciplina) consomem menos respostas do
+// que enfileiraram, e a sobra vaza para o teste seguinte — que falha por um
+// motivo que não tem nada a ver com ele.
 beforeEach(() => jest.resetAllMocks());
 
 describe('GET /api/trilhas', () => {
@@ -97,97 +128,167 @@ describe('GET /api/trilhas/:slug/mapa', () => {
   // Guardrail: a trilha deixou de ser Premium em 06/08/2026. Este teste trava
   // o oposto do que valia antes — usuário sem plano tem que entrar.
   it('200 para usuário Free — a trilha não tem paywall', async () => {
-    mockMapa();
+    mockMapaCatalogo();
     const res = await get('/api/trilhas/essencial-1a-fase/mapa');
     expect(res.status).toBe(200);
-    expect(res.body.faixas.length).toBeGreaterThan(0);
+    expect(res.body.disciplinas.length).toBeGreaterThan(0);
   });
 
-  // Guardrail: a faixa é derivada da incidência real, não de um campo manual.
+  // Guardrail: a faixa continua derivada da incidência real, mesmo agora que
+  // ela não é mais a seção de primeiro nível da resposta.
   it('classifica os temas na faixa certa pela incidência', async () => {
-    mockMapa();
+    mockMapaCatalogo();
     const res = await get('/api/trilhas/essencial-1a-fase/mapa');
 
-    const porFaixa = Object.fromEntries(
-      res.body.faixas.map((f) => [f.faixa, f.disciplinas.flatMap((d) => d.temas.map((t) => t.tema_id))])
-    );
-    expect(porFaixa.alta.sort()).toEqual([10, 11]); // 2.0 e 1.67
-    expect(porFaixa.media.sort()).toEqual([12, 13]); // 1.0 exato entra na média
-    expect(porFaixa.pontual).toEqual([14]); // 0.33
+    expect(acharTema(res.body, 10).faixa).toBe('alta');    // 2.0
+    expect(acharTema(res.body, 11).faixa).toBe('alta');    // 1.67
+    expect(acharTema(res.body, 12).faixa).toBe('media');   // 1.0 exato entra na média
+    expect(acharTema(res.body, 13).faixa).toBe('media');
+    expect(acharTema(res.body, 14).faixa).toBe('pontual'); // 0.33
+  });
+
+  // Guardrail do reagrupamento: dentro da disciplina, o que mais cai vem antes.
+  // É a ordem que define a progressão — inverter aqui destrava tema na ordem errada.
+  it('ordena os temas de cada disciplina da maior para a menor incidência', async () => {
+    mockMapaCatalogo();
+    const res = await get('/api/trilhas/essencial-1a-fase/mapa');
+
+    expect(porDisciplina(res.body)).toEqual({
+      const:  [10, 12], // 2.0 antes de 1.0
+      etica:  [11, 13], // 1.67 antes de 1.0
+      civil:  [14],
+    });
+  });
+
+  // ...e as disciplinas, da que mais cai para a que menos cai.
+  it('ordena as disciplinas por incidência total', async () => {
+    mockMapaCatalogo();
+    const res = await get('/api/trilhas/essencial-1a-fase/mapa');
+    expect(res.body.disciplinas.map((d) => d.disciplina)).toEqual(['const', 'etica', 'civil']);
   });
 
   it('conclui o tema com mínimo de questões e acerto acima do limiar', async () => {
-    mockMapa();
+    mockMapaCatalogo();
     const res = await get('/api/trilhas/essencial-1a-fase/mapa');
 
-    const alta = res.body.faixas.find((f) => f.faixa === 'alta');
-    const sigilo = alta.disciplinas.find((d) => d.disciplina === 'etica').temas[0];
-    expect(sigilo).toMatchObject({ tema_id: 11, concluido: true, pct: 80 });
-
-    const controle = alta.disciplinas.find((d) => d.disciplina === 'const').temas[0];
-    expect(controle).toMatchObject({ tema_id: 10, concluido: false }); // 2 < mínimo de 5
+    expect(acharTema(res.body, 11)).toMatchObject({ concluido: true, pct: 80 });
+    expect(acharTema(res.body, 10)).toMatchObject({ concluido: false }); // 2 < mínimo de 5
   });
 
-  // Guardrail central: a disciplina só abre na faixa seguinte quando fecha a anterior.
-  it('trava a disciplina na faixa seguinte enquanto a anterior não fecha', async () => {
-    mockMapa();
+  // Guardrail central: o tema de incidência menor só abre quando o de incidência
+  // maior da MESMA disciplina fecha. O reagrupamento por disciplina não podia
+  // afrouxar isso — a trava é a espinha da trilha.
+  it('mantém travado o tema seguinte enquanto o anterior não fecha', async () => {
+    mockMapaCatalogo();
     const res = await get('/api/trilhas/essencial-1a-fase/mapa');
 
-    const media = res.body.faixas.find((f) => f.faixa === 'media');
-    // const não concluiu a faixa alta → chega travada na média
-    expect(media.disciplinas.find((d) => d.disciplina === 'const').bloqueado).toBe(true);
-    // etica concluiu a alta → abre na média
-    expect(media.disciplinas.find((d) => d.disciplina === 'etica').bloqueado).toBe(false);
+    // const não concluiu o tema de alta (10) → o de média (12) segue travado
+    expect(acharTema(res.body, 12).bloqueado).toBe(true);
+    // etica concluiu o de alta (11) → o de média (13) abre
+    expect(acharTema(res.body, 13).bloqueado).toBe(false);
   });
 
   // Guardrail: faixa vazia é pulada, não vira barreira.
   it('não bloqueia disciplina que não aparece nas faixas anteriores', async () => {
-    mockMapa();
+    mockMapaCatalogo();
     const res = await get('/api/trilhas/essencial-1a-fase/mapa');
 
-    const pontual = res.body.faixas.find((f) => f.faixa === 'pontual');
-    const civil = pontual.disciplinas.find((d) => d.disciplina === 'civil');
+    const civil = res.body.disciplinas.find((d) => d.disciplina === 'civil');
     expect(civil.bloqueado).toBe(false); // civil não tem tema em alta nem em média
+    expect(acharTema(res.body, 14).bloqueado).toBe(false);
   });
 
   // Guardrail: questão sem tema_id fica fora do mapa e não inventa faixa.
   it('devolve mapa vazio quando nenhuma questão está classificada', async () => {
-    mockMapa({ rows: [] }, { rows: [] });
+    mockMapaCatalogo({ rows: [] }, { rows: [] });
     const res = await get('/api/trilhas/essencial-1a-fase/mapa');
     expect(res.status).toBe(200);
-    expect(res.body.faixas).toEqual([]);
+    expect(res.body.disciplinas).toEqual([]);
+  });
+});
+
+// ── Foco de disciplinas: a inclusão que substituiu a exclusão (08/08/2026) ──
+
+describe('foco de disciplinas', () => {
+  /**
+   * Guardrail da decisão de produto: o foco recorta a TRILHA e só ela.
+   * /questions/sortear e /sessions continuam sorteando de tudo — estreitar o
+   * estudo guiado é escolha do aluno, esconder da prova não é opção nossa.
+   */
+  it('a trilha pessoal traz só as disciplinas do foco', async () => {
+    mockMapaPessoal(['const']);
+    const res = await get('/api/trilhas/minha/mapa');
+
+    expect(res.body.disciplinas.map((d) => d.disciplina)).toEqual(['const']);
+    expect(res.body.foco).toEqual(['const']);
+  });
+
+  it('a query de temas nunca recebe disciplina fora do foco', async () => {
+    mockMapaPessoal(['const', 'civil']);
+    await get('/api/trilhas/minha/mapa');
+
+    const queryTemas = pool.query.mock.calls.find((c) => /FROM temas t/.test(c[0]));
+    expect(queryTemas[1][0].sort()).toEqual(['civil', 'const']); // sem 'etica'
+  });
+
+  // Guardrail semântico: `areas_foco = []` significa TODAS, não "nenhuma".
+  // Ler isso como lista de inclusão literal deixaria a trilha vazia para todo
+  // usuário que nunca passou pelo onboarding.
+  it('foco vazio devolve todas as disciplinas, não nenhuma', async () => {
+    mockMapaPessoal([]);
+    const res = await get('/api/trilhas/minha/mapa');
+
+    expect(res.body.disciplinas.map((d) => d.disciplina).sort()).toEqual(['civil', 'const', 'etica']);
+  });
+
+  // O aluno que escolhe uma trilha do catálogo pediu aquelas matérias. Cruzar
+  // com o foco devolveria trilha vazia para quem focou em outra coisa.
+  it('o foco não recorta as trilhas do catálogo', async () => {
+    mockMapaCatalogo();
+    const res = await get('/api/trilhas/essencial-1a-fase/mapa');
+
+    expect(res.body.disciplinas.map((d) => d.disciplina).sort()).toEqual(['civil', 'const', 'etica']);
+    // e nem consulta o foco do usuário para montá-la
+    expect(pool.query.mock.calls.some((c) => /areas_foco/.test(c[0]))).toBe(false);
   });
 });
 
 describe('GET /api/trilhas/:slug/tema/:temaId/questoes', () => {
-  function mockTema(temas = temasRows, perf = perfRows, excluidas = []) {
-    pool.query
-      .mockResolvedValueOnce({ rows: [{ areas: trilhaAreas }] }) // lookup das áreas
-      .mockResolvedValueOnce({ rows: [{ areas_excluidas: excluidas }] }) // exclusões
-      .mockResolvedValueOnce(temas)
-      .mockResolvedValueOnce(perf);
-  }
-
   it('400 para id de tema inválido', async () => {
     expect((await get('/api/trilhas/essencial-1a-fase/tema/abc/questoes')).status).toBe(400);
   });
 
   it('404 quando o tema não pertence à trilha', async () => {
-    mockTema();
+    mockMapaCatalogo();
     expect((await get('/api/trilhas/essencial-1a-fase/tema/999/questoes')).status).toBe(404);
   });
 
   // Guardrail mais importante: a trava é recalculada no servidor. Chamar a API
   // direto, sem passar pela interface, não pode liberar o tema.
-  it('423 CHECKPOINT_LOCKED para tema em faixa bloqueada', async () => {
-    mockTema();
-    const res = await get('/api/trilhas/essencial-1a-fase/tema/12/questoes'); // const na faixa média
+  it('423 CHECKPOINT_LOCKED para tema bloqueado', async () => {
+    mockMapaCatalogo();
+    const res = await get('/api/trilhas/essencial-1a-fase/tema/12/questoes'); // const, faixa média
     expect(res.status).toBe(423);
     expect(res.body.code).toBe('CHECKPOINT_LOCKED');
   });
 
+  // A trilha pessoal passa pela mesma trava — o slug novo não é atalho.
+  it('423 também na trilha pessoal', async () => {
+    mockMapaPessoal(['const']);
+    const res = await get('/api/trilhas/minha/tema/12/questoes');
+    expect(res.status).toBe(423);
+  });
+
+  // Tema de disciplina fora do foco não existe na trilha do aluno: 404, nunca
+  // um sorteio silencioso de questões que ele pediu para não estudar.
+  it('404 para tema de disciplina fora do foco', async () => {
+    mockMapaPessoal(['const']);
+    const res = await get('/api/trilhas/minha/tema/11/questoes'); // 11 é de etica
+    expect(res.status).toBe(404);
+  });
+
   it('200 sorteia questões de tema liberado', async () => {
-    mockTema();
+    mockMapaCatalogo();
     pool.query.mockResolvedValueOnce({
       rows: [{ id: 7, enunciado: 'Q', area_direito: 'const' }],
     });
@@ -201,66 +302,49 @@ describe('GET /api/trilhas/:slug/tema/:temaId/questoes', () => {
   });
 });
 
-// ── Exclusão de disciplinas e preview do onboarding (07/08/2026) ────────────
-
-describe('exclusão de disciplinas', () => {
-  /**
-   * Guardrail da decisão de produto: a disciplina excluída some da TRILHA e só
-   * dela. /questions/sortear e /sessions continuam sorteando de tudo — esconder
-   * do estudo guiado é escolha do aluno, esconder da prova não é opção nossa.
-   */
-  it('remove a disciplina excluída do mapa', async () => {
-    mockMapa(temasRows, perfRows, ['etica']);
-    const res = await get('/api/trilhas/essencial-1a-fase/mapa');
-
-    const disciplinas = res.body.faixas.flatMap((f) => f.disciplinas.map((d) => d.disciplina));
-    expect(disciplinas).not.toContain('etica');
-    expect(disciplinas).toContain('const');
-    expect(res.body.excluidas).toEqual(['etica']);
-  });
-
-  it('a query de temas nunca recebe a área excluída', async () => {
-    mockMapa(temasRows, perfRows, ['etica']);
-    await get('/api/trilhas/essencial-1a-fase/mapa');
-
-    const queryTemas = pool.query.mock.calls.find((c) => /FROM temas t/.test(c[0]));
-    expect(queryTemas[1][0]).toEqual(['civil', 'const']); // sem 'etica'
-  });
-
-  it('devolve mapa vazio se o aluno excluir tudo que a trilha tem', async () => {
-    mockMapa(temasRows, perfRows, ['etica', 'civil', 'const']);
-    const res = await get('/api/trilhas/essencial-1a-fase/mapa');
-    expect(res.body.faixas).toEqual([]);
-  });
-});
-
 describe('GET /api/trilhas/preview', () => {
+  function mockPreview(foco, temas = temasRows) {
+    pool.query
+      .mockResolvedValueOnce({
+        rows: [...new Set(temas.rows.map((t) => t.disciplina))].map((disciplina) => ({ disciplina })),
+      }) // todasDisciplinas
+      .mockResolvedValueOnce(filtrar(temas, foco))
+      .mockResolvedValueOnce({ rows: [] }); // preview é sempre progresso zero
+  }
+
   /**
    * Guardrail: é a tela 3 do onboarding, que roda ANTES de existir conta.
    * Se esta rota passar a exigir token, o fluxo inteiro quebra — e quebra
    * silenciosamente, porque o front só veria um 401 no lugar do preview.
    */
   it('responde sem token', async () => {
-    pool.query
-      .mockResolvedValueOnce({ rows: [{ slug: 'essencial-1a-fase', nome: 'Essencial', descricao: '', areas: trilhaAreas }] })
-      .mockResolvedValueOnce(temasRows)
-      .mockResolvedValueOnce({ rows: [] });
-
+    mockPreview(null);
     const res = await request(app).get('/api/trilhas/preview'); // sem Authorization
     expect(res.status).toBe(200);
     expect(res.body.total_temas).toBe(5);
   });
 
-  it('aplica as exclusões vindas da query string', async () => {
-    pool.query
-      .mockResolvedValueOnce({ rows: [{ slug: 'essencial-1a-fase', nome: 'Essencial', descricao: '', areas: trilhaAreas }] })
-      .mockResolvedValueOnce(temasRows)
-      .mockResolvedValueOnce({ rows: [] });
-
-    const res = await request(app).get('/api/trilhas/preview?excluir=etica');
+  it('aplica o foco vindo da query string', async () => {
+    mockPreview(['etica']);
+    const res = await request(app).get('/api/trilhas/preview?foco=etica');
 
     const queryTemas = pool.query.mock.calls.find((c) => /FROM temas t/.test(c[0]));
-    expect(queryTemas[1][0]).toEqual(['civil', 'const']);
-    expect(res.body.excluidas).toEqual(['etica']);
+    expect(queryTemas[1][0]).toEqual(['etica']);
+    expect(res.body.disciplinas.map((d) => d.disciplina)).toEqual(['etica']);
+    expect(res.body.foco).toEqual(['etica']);
+  });
+
+  /**
+   * Guardrail da tela 2: as N disciplinas pré-selecionadas saem DAQUI, na ordem
+   * em que o servidor devolve. Se a ordenação por incidência sair, o onboarding
+   * passa a marcar cinco matérias arbitrárias sem ninguém perceber.
+   */
+  it('devolve as disciplinas ordenadas por incidência, para a pré-seleção', async () => {
+    mockPreview(null);
+    const res = await request(app).get('/api/trilhas/preview');
+
+    expect(res.body.disciplinas.map((d) => d.disciplina)).toEqual(['const', 'etica', 'civil']);
+    const incidencias = res.body.disciplinas.map((d) => d.incidencia_total);
+    expect([...incidencias].sort((a, b) => b - a)).toEqual(incidencias);
   });
 });

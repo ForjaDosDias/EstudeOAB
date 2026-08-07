@@ -78,6 +78,62 @@ describe('POST /api/auth/register', () => {
     expect(res.body.token).toBeUndefined();
   });
 
+  // ── Foco de disciplinas (08/08/2026) ───────────────────────────────────────
+  // A pergunta do onboarding inverteu: era "o que você NÃO quer" (areas_excluidas,
+  // teto de 2), virou "o que você QUER focar" (areas_foco, sem teto).
+
+  it('grava areas_foco validado contra o catálogo real de disciplinas', async () => {
+    bcrypt.hash.mockResolvedValue('$hashed$');
+    pool.query
+      .mockResolvedValueOnce({ rows: [{ disciplina: 'penal' }, { disciplina: 'civil' }, { disciplina: 'const' }] })
+      .mockResolvedValueOnce({ rows: [fakeUser] })
+      .mockResolvedValueOnce({ rows: [{ token: 'test-uuid-token' }] });
+
+    const res = await request(app).post('/api/auth/register').send({
+      email: 'foco@oab.com',
+      password: 'senha123',
+      areas_foco: ['penal', 'civil'],
+    });
+
+    expect(res.status).toBe(201);
+    const insert = pool.query.mock.calls.find((c) => /INSERT INTO users/.test(c[0]));
+    expect(insert[1][7]).toEqual(['penal', 'civil']); // 8º parâmetro = areas_foco
+  });
+
+  // A API é chamável direto: sem esta validação daria para gravar "penalzinho"
+  // e o aluno acabaria com uma trilha permanentemente vazia.
+  it('400 quando a disciplina de foco não existe no banco', async () => {
+    bcrypt.hash.mockResolvedValue('$hashed$');
+    pool.query.mockResolvedValueOnce({ rows: [{ disciplina: 'penal' }] });
+
+    const res = await request(app).post('/api/auth/register').send({
+      email: 'foco@oab.com',
+      password: 'senha123',
+      areas_foco: ['inexistente'],
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/disciplina inexistente/i);
+  });
+
+  // Guardrail semântico: lista vazia é "todas", não "nenhuma". É o que grava o
+  // botão "quero estudar todas as matérias" e o default de quem pula a escolha.
+  it('aceita areas_foco vazio sem consultar o catálogo', async () => {
+    bcrypt.hash.mockResolvedValue('$hashed$');
+    pool.query
+      .mockResolvedValueOnce({ rows: [fakeUser] })
+      .mockResolvedValueOnce({ rows: [{ token: 'test-uuid-token' }] });
+
+    const res = await request(app).post('/api/auth/register').send({
+      email: 'todas@oab.com',
+      password: 'senha123',
+      areas_foco: [],
+    });
+
+    expect(res.status).toBe(201);
+    expect(pool.query.mock.calls.some((c) => /DISTINCT disciplina/.test(c[0]))).toBe(false);
+  });
+
   it('409 quando email já existe (conflito único)', async () => {
     bcrypt.hash.mockResolvedValue('$hashed$');
     const err = Object.assign(new Error('unique'), { code: '23505' });

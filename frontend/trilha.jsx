@@ -1,51 +1,48 @@
 /* global React */
 const { useState: useStateTrilha, useEffect: useEffectTrilha, useCallback: useCallbackTrilha } = React;
 
-// Rótulo das faixas de incidência (ordem de progressão da trilha)
+// Rótulo da faixa de incidência. Deixou de ser a seção de primeiro nível em
+// 2026-08-08 — virou etiqueta dentro do tema. A progressão não mudou: os temas
+// de alta incidência continuam vindo antes e travando os seguintes.
 const FAIXA_INFO = {
-  alta:    { titulo: 'Alta incidência',      sub: 'cai 1,5 ou mais por prova',  cor: 'var(--bordo)' },
-  media:   { titulo: 'Incidência média',     sub: 'cai ~1 por prova',           cor: 'var(--amarelo-dark)' },
-  pontual: { titulo: 'Incidência pontual',   sub: 'aparece em alguns exames',   cor: 'var(--text-muted)' },
+  alta:    { titulo: 'alta incidência',    cor: 'var(--bordo)' },
+  media:   { titulo: 'incidência média',   cor: 'var(--amarelo-dark)' },
+  pontual: { titulo: 'incidência pontual', cor: 'var(--text-muted)' },
 };
 
-// O AppData.AREAS cobre só as 7 áreas antigas; o banco tem 13. Este mapa
-// completa os rótulos que faltam (ramos processuais e transversais).
-const AREA_EXTRA = {
-  'proc civil':       { label: 'Proc. Civil',    icon: '⚖️' },
-  'proc penal':       { label: 'Proc. Penal',    icon: '🔍' },
-  'proc trab':        { label: 'Proc. Trabalho', icon: '👷' },
-  'trib e proc trib': { label: 'Tributário',     icon: '💰' },
-  'empresarial':      { label: 'Empresarial',    icon: '🏢' },
-  'human':            { label: 'Direitos Humanos', icon: '🕊️' },
-  'outros':           { label: 'Complementares', icon: '📚' },
-};
+// A trilha do próprio aluno, montada com as disciplinas que ele escolheu focar
+// no onboarding. Não existe na tabela `trilhas` — o servidor resolve o slug.
+const SLUG_PESSOAL = 'minha';
 
 /* =========================================================
-   Trilha por incidência — o aluno domina o que mais cai antes
-   de gastar tempo no que cai pouco. Uma disciplina só abre na
-   faixa seguinte quando a anterior estiver concluída.
+   Trilha por disciplina — o aluno escolhe a matéria e, dentro dela, domina o
+   que mais cai antes de gastar tempo no que cai pouco. Um tema só abre quando
+   os de incidência maior da MESMA disciplina estiverem concluídos.
    ========================================================= */
 function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
-  const [phase,   setPhase]   = useStateTrilha('pick'); // pick | map | run | result
+  const [phase,   setPhase]   = useStateTrilha('map'); // map | pick | run | result
   const [trilha,  setTrilha]  = useStateTrilha(null);
-  const [faixas,  setFaixas]  = useStateTrilha(null);
+  const [discs,   setDiscs]   = useStateTrilha(null);
+  const [aberta,  setAberta]  = useStateTrilha(null);
   const [loading, setLoading] = useStateTrilha(false);
   const [erro,    setErro]    = useStateTrilha(null);
   const [session, setSession] = useStateTrilha(null);
 
-  const { AREAS } = window.AppData;
-  const rotuloArea = (id) =>
-    AREAS[id] || AREA_EXTRA[id] || { label: id, icon: '⚖️', pillClass: 'area-pill-civil' };
+  const { areaInfo } = window.AppData;
 
   const carregarMapa = useCallbackTrilha((slug) => {
     setLoading(true); setErro(null);
     return window.apiFetch(`/trilhas/${slug}/mapa`)
-      .then((d) => { setFaixas(d.faixas); setTrilha(d.trilha); })
+      .then((d) => { setDiscs(d.disciplinas); setTrilha(d.trilha); })
       .catch((e) => setErro(e?.error || 'Erro ao carregar a trilha.'))
       .finally(() => setLoading(false));
   }, []);
 
-  const escolherTrilha = (t) => { setTrilha(t); setPhase('map'); carregarMapa(t.slug); };
+  // Entra direto na trilha do aluno. O catálogo continua acessível em "trocar
+  // de trilha" — mas a trilha dele é o padrão, não uma opção escondida.
+  useEffectTrilha(() => { carregarMapa(SLUG_PESSOAL); }, [carregarMapa]);
+
+  const escolherTrilha = (t) => { setAberta(null); setPhase('map'); carregarMapa(t.slug); };
 
   const iniciarTema = async (tema) => {
     setErro(null);
@@ -72,7 +69,7 @@ function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
       setPhase('run');
     } catch (e) {
       if (e?.code === 'CHECKPOINT_LOCKED') {
-        setErro('Tema bloqueado — conclua esta disciplina na faixa anterior primeiro.');
+        setErro('Tema bloqueado — conclua os temas de maior incidência desta matéria primeiro.');
       } else {
         setErro(e?.error || 'Erro ao iniciar o tema.');
       }
@@ -104,20 +101,21 @@ function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
     );
   }
 
-  // ── Escolha da trilha ──────────────────────────────────────────────────────
+  // ── Catálogo de trilhas prontas ───────────────────────────────────────────
   if (phase === 'pick') {
     return (
       <div className="practice-setup fade-up">
         <div className="practice-setup-header">
           <div>
             <div className="eyebrow">Estudo guiado</div>
-            <h1 className="page-h1">Sua trilha de aprovação.</h1>
+            <h1 className="page-h1">Trilhas prontas.</h1>
             <p className="page-sub">
-              Os temas aparecem na ordem em que mais caem na prova. Domine os de alta
-              incidência e a disciplina libera a faixa seguinte.
+              Conjuntos fechados de matérias, para quando você quiser fugir do seu foco.
             </p>
           </div>
-          <button className="btn btn-quiet" onClick={onExit}>← Voltar à dashboard</button>
+          <button className="btn btn-quiet" onClick={() => escolherTrilha({ slug: SLUG_PESSOAL })}>
+            ← Voltar à minha trilha
+          </button>
         </div>
         <div className="practice-setup-card">
           <div className="reg-section-title">Trilhas disponíveis</div>
@@ -127,103 +125,117 @@ function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
     );
   }
 
-  // ── Mapa da trilha (faixa de incidência → disciplina → temas) ──────────────
+  // ── Mapa: disciplina → temas ──────────────────────────────────────────────
+  const discAberta = (discs || []).find((d) => d.disciplina === aberta);
+
   return (
     <div className="practice-setup fade-up">
       <div className="practice-setup-header">
         <div>
           <div className="eyebrow">Trilha · {trilha?.nome}</div>
-          <h1 className="page-h1">O que mais cai, primeiro.</h1>
+          <h1 className="page-h1">Suas matérias, o que mais cai primeiro.</h1>
           <p className="page-sub">{trilha?.descricao}</p>
         </div>
-        <button className="btn btn-quiet" onClick={() => { setPhase('pick'); setFaixas(null); }}>
-          ← Trocar de trilha
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-quiet" onClick={() => setPhase('pick')}>Trilhas prontas</button>
+          <button className="btn btn-quiet" onClick={onExit}>← Dashboard</button>
+        </div>
       </div>
 
       {erro && <div className="login-error" style={{ marginBottom: 16 }}><span>✕</span> {erro}</div>}
       {loading && <div style={{ color: 'var(--text-muted)' }}>Carregando trilha…</div>}
 
-      {!loading && faixas && faixas.length === 0 && (
+      {!loading && discs && discs.length === 0 && (
         <div className="practice-setup-card" style={{ color: 'var(--text-muted)' }}>
-          Ainda não há questões classificadas por tema nesta trilha.
+          Ainda não há questões classificadas por tema nas matérias que você escolheu.
+          {' '}Você pode incluir outras em <strong>Minha conta</strong>.
         </div>
       )}
 
-      {!loading && faixas && faixas.map((f) => {
-        const info = FAIXA_INFO[f.faixa] || { titulo: f.label, sub: '', cor: 'var(--text-muted)' };
-        return (
-          <div key={f.faixa} style={{ marginBottom: 26 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, margin: '0 0 12px' }}>
-              <span style={{ fontWeight: 800, fontSize: 15, color: info.cor }}>{info.titulo}</span>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{info.sub}</span>
-            </div>
-
-            {f.disciplinas.map((disc) => {
-              const area = rotuloArea(disc.disciplina);
+      {!loading && discs && discs.length > 0 && (
+        <div className="practice-setup-card">
+          <div className="trilha-estacoes">
+            {discs.map((d, i) => {
+              const a = areaInfo(d.disciplina);
+              const estado = d.bloqueado ? 'bloqueada' : d.pct === 100 ? 'concluida' : 'aberta';
               return (
-                <div key={disc.disciplina} className="practice-setup-card" style={{ marginBottom: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-                    <span className={`area-pill ${area.pillClass || 'area-pill-civil'}`} style={{ padding: '4px 10px' }}>
-                      {area.icon} {area.label}
-                    </span>
-                    <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                      {disc.temas.length} tema{disc.temas.length > 1 ? 's' : ''} · ~{disc.incidencia_total} questões/prova
-                    </span>
-                    {disc.bloqueado && (
-                      <span className="chip chip-neutral" style={{ marginLeft: 'auto' }}>
-                        🔒 conclua a faixa anterior
-                      </span>
-                    )}
-                    {!disc.bloqueado && disc.concluida && (
-                      <span className="chip chip-neutral" style={{ marginLeft: 'auto', color: 'var(--green-dark)' }}>
-                        ✓ concluída
-                      </span>
-                    )}
+                <div key={d.disciplina} className="trilha-estacao">
+                  <div className="trilha-parada">
+                    <window.Shell.DisciplinaBolinha
+                      area={d.disciplina}
+                      pct={d.pct}
+                      estado={estado}
+                      ativa={aberta === d.disciplina}
+                      onClick={() => setAberta(aberta === d.disciplina ? null : d.disciplina)}
+                    />
+                    <div className="trilha-parada-label">{a.label}</div>
+                    <div className="trilha-parada-sub">{d.concluidos}/{d.total_temas} temas</div>
+                    <div className="trilha-parada-barra">
+                      <div className="trilha-parada-barra-fill"
+                           style={{ width: `${d.pct}%`, background: a.cor }} />
+                    </div>
                   </div>
-
-                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    {disc.temas.map((t) => {
-                      const selo = t.bloqueado ? '🔒' : t.concluido ? '✓' : '▶';
-                      return (
-                        <button
-                          key={t.tema_id}
-                          onClick={() => !t.bloqueado && iniciarTema(t)}
-                          disabled={t.bloqueado}
-                          className="card"
-                          style={{
-                            flex: '1 1 210px', minWidth: 210, textAlign: 'left', padding: 13,
-                            cursor: t.bloqueado ? 'not-allowed' : 'pointer',
-                            opacity: t.bloqueado ? 0.55 : 1,
-                            border: `1px solid ${t.concluido ? 'var(--green-dark)' : 'var(--border-strong)'}`,
-                            borderRadius: 12, background: 'var(--bg-surface)',
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-                            <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{t.nome}</span>
-                            <span style={{ fontSize: 15 }}>{selo}</span>
-                          </div>
-                          <div className="progress-track" style={{ marginBottom: 6 }}>
-                            <div className="progress-fill" style={{ width: `${t.pct}%`, background: info.cor }} />
-                          </div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                            cai ~{t.incidencia}/prova ·{' '}
-                            {t.concluido
-                              ? `concluído (${t.pct}%)`
-                              : t.bloqueado
-                                ? 'bloqueado'
-                                : `${t.respondidas}/${t.min_necessario} p/ concluir`}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {i < discs.length - 1 && <div className="trilha-conector" />}
                 </div>
               );
             })}
           </div>
-        );
-      })}
+        </div>
+      )}
+
+      {discAberta && (
+        <div className="practice-setup-card fade-up" style={{ marginTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <span style={{ fontWeight: 800, color: areaInfo(discAberta.disciplina).cor }}>
+              {areaInfo(discAberta.disciplina).label}
+            </span>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+              {discAberta.total_temas} temas · ~{discAberta.incidencia_total} questões/prova
+            </span>
+            <button className="btn btn-quiet" style={{ marginLeft: 'auto', padding: '4px 10px' }}
+                    onClick={() => setAberta(null)}>✕</button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {discAberta.temas.map((t) => {
+              const info = FAIXA_INFO[t.faixa] || FAIXA_INFO.pontual;
+              const selo = t.bloqueado ? '🔒' : t.concluido ? '✓' : '▶';
+              return (
+                <button
+                  key={t.tema_id}
+                  onClick={() => !t.bloqueado && iniciarTema(t)}
+                  disabled={t.bloqueado}
+                  className="card"
+                  style={{
+                    flex: '1 1 210px', minWidth: 210, textAlign: 'left', padding: 13,
+                    cursor: t.bloqueado ? 'not-allowed' : 'pointer',
+                    opacity: t.bloqueado ? 0.55 : 1,
+                    border: `1px solid ${t.concluido ? 'var(--green-dark)' : 'var(--border-strong)'}`,
+                    borderRadius: 12, background: 'var(--bg-surface)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{t.nome}</span>
+                    <span style={{ fontSize: 15 }}>{selo}</span>
+                  </div>
+                  <div className="progress-track" style={{ marginBottom: 6 }}>
+                    <div className="progress-fill" style={{ width: `${t.pct}%`, background: info.cor }} />
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    <span style={{ color: info.cor, fontWeight: 700 }}>{info.titulo}</span>
+                    {' · '}cai ~{t.incidencia}/prova ·{' '}
+                    {t.concluido
+                      ? `concluído (${t.pct}%)`
+                      : t.bloqueado
+                        ? 'bloqueado'
+                        : `${t.respondidas}/${t.min_necessario} p/ concluir`}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
