@@ -247,26 +247,7 @@ function Dashboard({ user, onPracticeStart, onNavigate }) {
           </div>
         </div>
 
-        <div className="streak-card">
-          <div className="streak-eyebrow">Sequência atual</div>
-          <div className="streak-number">{user?.streak || 0}</div>
-          <div className="streak-label">dias consecutivos de estudo</div>
-          <div className="streak-days">
-            {['seg','ter','qua','qui','sex','sáb','dom'].map((d, i) => {
-              const today = new Date().getDay();
-              const dayIndex = [1,2,3,4,5,6,0][i];
-              const isPast  = dayIndex < today;
-              const isToday = dayIndex === today;
-              const cls = isPast ? 'done' : isToday ? 'today' : 'pending';
-              return (
-                <div key={d} className="streak-day">
-                  <div className={`streak-day-circle ${cls}`}>{cls === 'done' ? '✓' : cls === 'today' ? '●' : '–'}</div>
-                  <div className="streak-day-name">{d}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <StreakFlame user={user} />
       </section>
 
       <section className="dash-row dash-stats">
@@ -555,4 +536,71 @@ function NotificacoesPanel({ notifications, onClose }) {
   );
 }
 
-window.Shell = { AppShell, Dashboard };
+/* =========================================================
+   Streak — sequência de dias em que a META diária foi batida.
+
+   Substituiu uma grade semanal decorativa que marcava ✓ em todo dia já passado
+   da semana, tivesse o aluno estudado ou não. Aqui os dados vêm de
+   /api/me/streak, que fica fora do paywall de propósito: /api/stats/* é
+   Premium, e uma mecânica de retenção precisa alcançar quem ainda não paga.
+   ========================================================= */
+function StreakFlame({ user }) {
+  const [dados, setDados] = useStateShell(null);
+
+  useEffectShell(() => {
+    window.apiFetch('/me/streak').then(setDados).catch(() => setDados(null));
+  }, [user?.streak]);
+
+  const streak = dados?.streak ?? user?.streak ?? 0;
+  const meta = dados?.meta;
+  const pct = meta ? Math.min(100, Math.round((meta.feito / meta.alvo) * 100)) : 0;
+
+  // Mostra os últimos 7 dias da sequência: aceso = já dentro da sequência atual.
+  const chamas = Array.from({ length: 7 }, (_, i) => i < Math.min(streak, 7));
+
+  return (
+    <div className="streak-card">
+      <div className="streak-eyebrow">Sequência atual</div>
+      <div className="streak-number">{streak}</div>
+      <div className="streak-label">
+        {streak === 0
+          ? 'bata a meta de hoje para começar'
+          : `dia${streak > 1 ? 's' : ''} batendo a meta`}
+      </div>
+
+      <div className="streak-days">
+        {chamas.map((aceso, i) => (
+          <div key={i} className="streak-day">
+            <div className={`streak-day-circle ${aceso ? 'done' : 'pending'}`}>
+              {aceso ? '🔥' : '·'}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {meta && (
+        <div className="streak-meta">
+          <div className="progress-track">
+            <div className="progress-fill" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="streak-meta-txt">
+            {meta.batida
+              ? `✓ meta de hoje batida (${meta.feito}/${meta.alvo})`
+              : `${meta.feito}/${meta.alvo} questões · faltam ${meta.faltam}`}
+          </div>
+        </div>
+      )}
+
+      {dados?.proximo_marco && (
+        <div className="streak-marco">
+          🪙 {dados.proximo_marco.moedas} moedas aos {dados.proximo_marco.dias} dias
+        </div>
+      )}
+      {dados?.streak_max > streak && (
+        <div className="streak-recorde">Seu recorde: {dados.streak_max} dias</div>
+      )}
+    </div>
+  );
+}
+
+window.Shell = { AppShell, Dashboard, StreakFlame };

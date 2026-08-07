@@ -185,7 +185,21 @@ function App() {
     );
   }
 
+  // O onboarding em 3 telas substituiu o RegisterFlow de 4 etapas em 07/08/2026.
+  // O RegisterFlow continua no código e alcançável por `route === 'register-legado'`
+  // até o fluxo novo se provar em produção — não vale apagar o caminho que funciona
+  // antes de o substituto rodar com gente de verdade.
   if (route === 'register') {
+    return (
+      <window.Onboarding.OnboardingFlow
+        onCancel={() => setRoute('splash')}
+        onComplete={handleRegisterComplete}
+        onEmailPending={(email) => { setEmailPending({ email, tokenExpired: false }); setRoute('email-pending'); }}
+      />
+    );
+  }
+
+  if (route === 'register-legado') {
     return (
       <window.AuthFlow.RegisterFlow
         onCancel={() => setRoute('splash')}
