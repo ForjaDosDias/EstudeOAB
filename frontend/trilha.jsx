@@ -65,6 +65,7 @@ function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
           total_questoes: data.questoes.length,
         }),
       });
+      window.track('sessao_iniciada', { modo: 'trilha', total: data.questoes.length });
       setSession({
         id: sess.id,
         questoes: data.questoes.map(window.Practice.formatarQuestao),

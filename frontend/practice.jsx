@@ -37,6 +37,7 @@ function PracticeFlow({ user, onUserUpdate, onExit, onNavigate, onUpgrade }) {
         setErro('Nenhuma questão encontrada para as áreas selecionadas. Peça ao administrador para importar questões.');
         return;
       }
+      window.track('sessao_iniciada', { modo: config.modo, total: data.questoes.length });
       setSession({ id: data.id, questoes: data.questoes.map(formatarQuestao), respostas: [], idx: 0 });
       setPhase('run');
     } catch (err) {
@@ -428,6 +429,7 @@ function PracticeResult({ session, onRetry, onExit, onNavigate, onUserUpdate }) 
     window.apiFetch(`/sessions/${session.id}/concluir`, { method: 'PATCH' })
       .then(r => {
         setResultado(r);
+        window.track('sessao_concluida', { acertos: r?.acertos, total: r?.total_questoes });
         // Atualiza XP/streak na sidebar sem forçar logout
         if (onUserUpdate) {
           window.apiFetch('/auth/me').then(onUserUpdate).catch(() => {});

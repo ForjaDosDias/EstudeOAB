@@ -407,3 +407,27 @@ UPDATE users u
           WHERE t.ativo AND NOT (t.disciplina = ANY(u.areas_excluidas)))
  WHERE COALESCE(array_length(u.areas_excluidas, 1), 0) > 0
    AND COALESCE(array_length(u.areas_foco, 1), 0) = 0;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Eventos de produto (2026-08-08)
+--
+-- `answers` registra o que o aluno faz DEPOIS de ter conta; o onboarding roda
+-- antes dela existir. `anon_id` é gerado no navegador na primeira visita e
+-- enviado em todo evento, inclusive depois do cadastro — é o que costura
+-- "abriu o site" a "criou conta". Sem ele o funil começa tarde demais.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS eventos (
+  id        BIGSERIAL PRIMARY KEY,
+  anon_id   UUID NOT NULL,                                   -- do navegador, atravessa o cadastro
+  user_id   INTEGER REFERENCES users(id) ON DELETE SET NULL, -- NULL antes da conta existir
+  nome      VARCHAR(60) NOT NULL,                            -- allowlist no backend
+  props     JSONB DEFAULT '{}',
+  utm       JSONB DEFAULT '{}',                              -- origem da 1ª visita
+  criado_em TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- O painel sempre pergunta "quantos X nos últimos N dias".
+CREATE INDEX IF NOT EXISTS idx_eventos_nome_data ON eventos(nome, criado_em DESC);
+-- E o funil precisa juntar todos os eventos de uma mesma pessoa anônima.
+CREATE INDEX IF NOT EXISTS idx_eventos_anon      ON eventos(anon_id);
+CREATE INDEX IF NOT EXISTS idx_eventos_user      ON eventos(user_id) WHERE user_id IS NOT NULL;

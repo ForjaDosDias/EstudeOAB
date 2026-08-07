@@ -1061,3 +1061,36 @@
 .streak-meta-txt { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
 .streak-marco { font-size: 12px; color: var(--amarelo-dark); margin-top: 10px; font-weight: 600; }
 .streak-recorde { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+/* ─── Métricas do admin (08/08/2026) ─────────────────────────────────────── */
+
+.met-topo { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+.met-periodo { display: flex; gap: 6px; }
+.met-nota { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 0 0 12px; }
+
+.met-funil { display: flex; flex-direction: column; gap: 11px; }
+.met-etapa-topo { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+.met-etapa-nome { font-size: 13px; font-weight: 600; }
+.met-etapa-n { font-size: 15px; font-weight: 800; }
+.met-queda { font-size: 11px; color: var(--bordo); margin-top: 3px; font-weight: 600; }
+
+/* Barras por dia: rolam na horizontal em vez de espremer 90 dias na tela. */
+.met-barras { display: flex; align-items: flex-end; gap: 3px; height: 110px; overflow-x: auto; padding-bottom: 4px; }
+.met-barra { position: relative; flex: 1 0 8px; min-width: 8px; height: 100%; display: flex; align-items: flex-end; }
+.met-barra-fill { width: 100%; background: var(--azul); border-radius: 2px 2px 0 0; min-height: 1px; }
+.met-barra-conta { position: absolute; bottom: 0; left: 0; width: 100%; background: var(--bordo); border-radius: 2px 2px 0 0; opacity: .85; }
+.met-legenda { display: flex; gap: 16px; font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+.met-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.met-dot-resp  { background: var(--azul); }
+.met-dot-conta { background: var(--bordo); }
+
+.met-cards { display: flex; gap: 10px; flex-wrap: wrap; }
+.met-card { flex: 1 1 130px; padding: 14px; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--bg-base); }
+.met-card-n { font-size: 24px; font-weight: 800; line-height: 1; }
+.met-card-l { font-size: 11px; color: var(--text-muted); margin-top: 5px; }
+
+.met-tabela { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.met-tabela th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); padding: 6px 8px; border-bottom: 1px solid var(--border-strong); }
+.met-tabela td { padding: 8px; border-bottom: 1px solid var(--border-strong); }
+.met-tabela tr:last-child td { border-bottom: none; }
+.met-sub { color: var(--text-muted); font-size: 11px; }

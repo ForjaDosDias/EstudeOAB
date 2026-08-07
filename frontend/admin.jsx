@@ -28,11 +28,13 @@ function AdminPage({ token, onNavigate }) {
         <button className={`admin-tab ${tab === 'pdf'      ? 'is-active' : ''}`} onClick={() => setTabAdmin('pdf')}>      ✦ Importar PDF</button>
         <button className={`admin-tab ${tab === 'csv'      ? 'is-active' : ''}`} onClick={() => setTabAdmin('csv')}>      ↑ Importar CSV</button>
         <button className={`admin-tab ${tab === 'questoes' ? 'is-active' : ''}`} onClick={() => setTabAdmin('questoes')}>≡ Questões no banco</button>
+        <button className={`admin-tab ${tab === 'metricas' ? 'is-active' : ''}`} onClick={() => setTabAdmin('metricas')}>◷ Métricas</button>
       </div>
 
       {tab === 'pdf'      && <AdminImportPDF />}
       {tab === 'csv'      && <AdminUploadCSV token={token} />}
       {tab === 'questoes' && <AdminQuestoes />}
+      {tab === 'metricas' && <AdminMetricas />}
     </div>
   );
 }
@@ -921,6 +923,143 @@ function AdminQuestoes() {
           onSave={salvarEdicao}
           onClose={() => setEditando(null)}
         />
+      )}
+    </div>
+  );
+}
+
+/* =========================================================
+   Métricas de produto (08/08/2026).
+
+   Responde duas perguntas: onde as pessoas desistem, e onde elas travam no
+   conteúdo. Sem biblioteca de gráfico — o projeto não tem bundler, e barra é
+   div com largura percentual, como stats.jsx já faz.
+   ========================================================= */
+function AdminMetricas() {
+  const [dias, setDias]   = useStateAdmin(30);
+  const [dados, setDados] = useStateAdmin(null);
+  const [erro, setErro]   = useStateAdmin(null);
+
+  useEffectAdmin(() => {
+    setDados(null); setErro(null);
+    adminFetch(`/admin/metricas?dias=${dias}`)
+      .then(setDados)
+      .catch((e) => setErro(e?.error || 'Erro ao carregar as métricas.'));
+  }, [dias]);
+
+  if (erro)   return <div className="login-error"><span>✕</span> {erro}</div>;
+  if (!dados) return <div style={{ color: 'var(--text-muted)', padding: 20 }}>Carregando métricas…</div>;
+
+  const topo = dados.funil[0]?.pessoas || 0;
+  const maxDia = Math.max(1, ...dados.por_dia.map((d) => Math.max(d.respostas, d.contas, d.sessoes)));
+  const ret = dados.retencao || { coorte: 0, voltou_d1: 0, voltou_d7: 0 };
+  const pct = (n, base) => (base ? Math.round((n / base) * 100) : 0);
+
+  return (
+    <div className="admin-card">
+      <div className="met-topo">
+        <div className="met-periodo">
+          {[7, 30, 90].map((d) => (
+            <button key={d} className={`admin-tab ${dias === d ? 'is-active' : ''}`} onClick={() => setDias(d)}>
+              {d} dias
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Funil ─────────────────────────────────────────────────────────── */}
+      <div className="reg-section-title">Funil</div>
+      <p className="met-nota">
+        As quatro primeiras etapas vêm dos eventos, que só existem desde 08/08/2026. Antes dessa
+        data elas aparecem zeradas — é ausência de medição, não queda de verdade.
+      </p>
+      <div className="met-funil">
+        {dados.funil.map((f, i) => {
+          const anterior = i > 0 ? dados.funil[i - 1].pessoas : null;
+          const queda = anterior && anterior > f.pessoas ? anterior - f.pessoas : 0;
+          return (
+            <div key={f.etapa} className="met-etapa">
+              <div className="met-etapa-topo">
+                <span className="met-etapa-nome">{f.etapa}</span>
+                <span className="met-etapa-n">{f.pessoas}</span>
+              </div>
+              <div className="progress-track">
+                <div className="progress-fill"
+                     style={{ width: `${pct(f.pessoas, topo)}%`,
+                              background: f.fonte === 'evento' ? 'var(--azul)' : 'var(--bordo)' }} />
+              </div>
+              {queda > 0 && (
+                <div className="met-queda">−{queda} pessoa{queda > 1 ? 's' : ''} nesta etapa</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Uso por dia ───────────────────────────────────────────────────── */}
+      <div className="reg-section-title" style={{ marginTop: 26 }}>Uso por dia</div>
+      <div className="met-barras">
+        {dados.por_dia.map((d) => (
+          <div key={d.dia} className="met-barra" title={`${d.dia}: ${d.respostas} respostas · ${d.contas} contas · ${d.sessoes_ok}/${d.sessoes} sessões concluídas`}>
+            <div className="met-barra-fill" style={{ height: `${(d.respostas / maxDia) * 100}%` }} />
+            {d.contas > 0 && <div className="met-barra-conta" style={{ height: `${(d.contas / maxDia) * 100}%` }} />}
+          </div>
+        ))}
+      </div>
+      <div className="met-legenda">
+        <span><i className="met-dot met-dot-resp" /> respostas</span>
+        <span><i className="met-dot met-dot-conta" /> contas novas</span>
+      </div>
+
+      {/* ── Retenção ──────────────────────────────────────────────────────── */}
+      <div className="reg-section-title" style={{ marginTop: 26 }}>Retenção</div>
+      <div className="met-cards">
+        <div className="met-card"><div className="met-card-n">{ret.coorte}</div><div className="met-card-l">na coorte</div></div>
+        <div className="met-card"><div className="met-card-n">{pct(ret.voltou_d1, ret.coorte)}%</div><div className="met-card-l">voltou no dia seguinte</div></div>
+        <div className="met-card"><div className="met-card-n">{pct(ret.voltou_d7, ret.coorte)}%</div><div className="met-card-l">voltou em 7 dias</div></div>
+      </div>
+
+      {/* ── Origem ────────────────────────────────────────────────────────── */}
+      <div className="reg-section-title" style={{ marginTop: 26 }}>De onde vieram</div>
+      {dados.origem.length === 0 ? (
+        <p className="met-nota">Nenhum evento no período. Use links com <code>?utm_source=instagram</code> para separar por rede.</p>
+      ) : (
+        <table className="met-tabela">
+          <thead><tr><th>Origem</th><th>Pessoas</th><th>Viraram conta</th></tr></thead>
+          <tbody>
+            {dados.origem.map((o) => (
+              <tr key={o.origem}>
+                <td>{o.origem}</td><td>{o.pessoas}</td>
+                <td>{o.viraram_conta} <span className="met-sub">({pct(o.viraram_conta, o.pessoas)}%)</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {/* ── Onde o aluno erra ─────────────────────────────────────────────── */}
+      <div className="reg-section-title" style={{ marginTop: 26 }}>Onde o aluno erra mais</div>
+      {dados.conteudo.length === 0 ? (
+        <p className="met-nota">Ainda não há respostas suficientes (mínimo de 5 por subtema) para isto significar algo.</p>
+      ) : (
+        <table className="met-tabela">
+          <thead><tr><th>Matéria</th><th>Subtema</th><th>Respostas</th><th>Acerto</th></tr></thead>
+          <tbody>
+            {dados.conteudo.map((c, i) => {
+              const a = window.AppData.areaInfo(c.materia);
+              return (
+                <tr key={i}>
+                  <td><span className="met-dot" style={{ background: a.cor }} /> {a.label}</td>
+                  <td>{c.subtema || <span className="met-sub">sem subtema</span>}</td>
+                  <td>{c.respostas}</td>
+                  <td style={{ color: c.pct_acerto < 40 ? 'var(--bordo)' : 'inherit', fontWeight: 700 }}>
+                    {c.pct_acerto}%
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       )}
     </div>
   );

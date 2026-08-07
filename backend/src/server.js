@@ -16,6 +16,8 @@ const coinsRouter         = require('./routes/coins');
 const trilhasRouter       = require('./routes/trilhas');
 const adsRouter           = require('./routes/ads');
 const meRouter            = require('./routes/me');
+const eventsRouter        = require('./routes/events');
+const metricasRouter      = require('./routes/metricas');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -37,6 +39,8 @@ app.use('/api/coins',         coinsRouter);
 app.use('/api/trilhas',       trilhasRouter);
 app.use('/api/ads',           adsRouter);
 app.use('/api/me',            meRouter);
+app.use('/api/admin/metricas', metricasRouter);
+app.use('/api/events',        eventsRouter);
 
 app.get('/api/health', async (req, res) => {
   try {

@@ -52,6 +52,9 @@ GET    /api/trilhas/:slug/questoes — sorteia questões da trilha              
 GET    /api/trilhas/:slug/mapa    — matéria → subtemas + progresso            [requireAuth]
 GET    /api/trilhas/:slug/subtema/:id/questoes — questões; 423 se travado      [requireAuth]
 
+POST   /api/events               — evento de produto (SEM auth — funil pré-cadastro)
+GET    /api/admin/metricas        — funil, uso, retenção, origem, acerto     [requireAdmin]
+
 GET    /api/health                 — { ok, db }
 ```
 
@@ -96,6 +99,25 @@ trib e proc trib, empresarial, human, outros`
 ⚠️ Não é `trib` — o valor real é `trib e proc trib`. O seed das trilhas usava
 `trib` e por isso a Trilha Publicista prometia Tributário e devolvia zero
 questões dessa matéria (corrigido em 06/08/2026).
+
+## Métricas de produto (08/08/2026)
+
+**`eventos`**: `id, anon_id (UUID do navegador), user_id (NULL antes da conta), nome, props JSONB, utm JSONB, criado_em`
+
+`POST /api/events` é **público de propósito**: o evento mais valioso do funil —
+"abriu o site e desistiu no onboarding" — acontece antes de existir conta. Pôr
+`requireAuth` ali faz o funil voltar a começar no cadastro **sem quebrar nada**,
+que é o pior tipo de regressão. Três travas seguram o endpoint: allowlist de
+nomes (`EVENTOS` em `routes/events.js`), teto de 2 KB em `props` e rate limit de
+40/min por `anon_id`.
+
+`anon_id` fica no `localStorage` e continua sendo enviado **depois** do cadastro
+— é ele que costura "abriu o site" a "criou conta".
+
+O funil do painel tem duas metades: as 4 primeiras etapas vêm de `eventos` (só
+existem desde 08/08/2026), as 4 últimas de `users`/`answers` (valem para todo o
+histórico). Período anterior a essa data mostra as primeiras zeradas — é
+ausência de medição, não queda.
 
 ## Import PDF (admin.js)
 

@@ -64,5 +64,68 @@ function apiFetch(path, opts = {}) {
   }).then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e)));
 }
 
+/* =========================================================
+   Eventos de produto (08/08/2026).
+
+   O onboarding roda ANTES de existir conta, então o funil não pode depender de
+   token: quem abre o site e desiste na tela 2 é justamente o que se quer medir.
+   O `anon_id` fica no localStorage e continua sendo enviado depois do cadastro
+   — é ele que costura "abriu o site" a "criou conta".
+   ========================================================= */
+const ANON_KEY = 'oab_anon';
+const UTM_KEY  = 'oab_utm';
+
+function anonId() {
+  let id = localStorage.getItem(ANON_KEY);
+  if (!id) {
+    id = (crypto.randomUUID && crypto.randomUUID()) ||
+      // Safari antigo não tem randomUUID; sem fallback o funil sumiria para
+      // esses visitantes sem ninguém notar.
+      'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+      });
+    localStorage.setItem(ANON_KEY, id);
+  }
+  return id;
+}
+
+// A UTM é lida uma vez, na primeira visita, e guardada: a pessoa chega pelo
+// link do Instagram e só cria conta três telas depois, quando a query string
+// já sumiu da URL.
+function utmSalva() {
+  const guardada = localStorage.getItem(UTM_KEY);
+  if (guardada) { try { return JSON.parse(guardada); } catch { /* corrompida: relê */ } }
+
+  const p = new URLSearchParams(location.search);
+  const utm = {};
+  for (const k of ['utm_source', 'utm_medium', 'utm_campaign']) {
+    if (p.get(k)) utm[k.replace('utm_', '')] = p.get(k).slice(0, 60);
+  }
+  if (!utm.source && document.referrer && !document.referrer.includes(location.host)) {
+    try { utm.source = new URL(document.referrer).hostname; } catch { /* referrer torto */ }
+  }
+  localStorage.setItem(UTM_KEY, JSON.stringify(utm));
+  return utm;
+}
+
+function track(nome, props = {}) {
+  try {
+    const token = localStorage.getItem('oab_token');
+    fetch('/api/events', {
+      method: 'POST',
+      keepalive: true, // sobrevive à navegação que o próprio clique dispara
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ anon_id: anonId(), nome, props, utm: utmSalva() }),
+    }).catch(() => {});
+  } catch {
+    // Silêncio proposital: métrica que quebra a tela é pior que métrica nenhuma.
+  }
+}
+
 window.AppData  = { AREAS, DISCIPLINAS, areaInfo };
+window.track    = track;
 window.apiFetch = apiFetch;

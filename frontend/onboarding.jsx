@@ -46,6 +46,10 @@ function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
 
   const { areaInfo } = window.AppData;
 
+  // Funil: sem estes eventos não há como saber em qual das 3 telas a pessoa
+  // desiste — e é aqui, antes de existir conta, que a maioria some.
+  useEffectOnb(() => { window.track('onboarding_visto'); }, []);
+
   // Catálogo real: quais disciplinas existem e quanto cada uma cai. Sai do
   // /preview sem foco, que já devolve tudo ordenado por incidência — evita um
   // endpoint novo só para listar chips.
@@ -79,6 +83,7 @@ function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
           if (!vivo) return;
           setPreview(d);
           setTela(3);
+          window.track('trilha_vista', { materias: (d.disciplinas || []).length });
         }, espera);
       });
 
@@ -171,7 +176,10 @@ function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
           <button
             className="btn-primary onb-cta"
             disabled={foco.length === 0}
-            onClick={() => setTela('montando')}
+            onClick={() => {
+              window.track('foco_escolhido', { materias: foco.length });
+              setTela('montando');
+            }}
           >
             Montar minha trilha
           </button>
@@ -226,7 +234,10 @@ function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
         ) : (
           <div className="onb-ctas">
             <button className="btn btn-quiet" onClick={() => setTela(2)}>Ajustar trilha</button>
-            <button className="btn-primary" onClick={() => setCriandoConta(true)}>
+            <button
+              className="btn-primary"
+              onClick={() => { window.track('conta_iniciada'); setCriandoConta(true); }}
+            >
               Começar exercícios
             </button>
           </div>
@@ -284,6 +295,7 @@ function ContaForm({ foco, onCancel, onComplete, onEmailPending }) {
       // O register hoje SEMPRE devolve { requiresVerification, email } — nunca
       // um token. O caminho de onComplete existe para o dia em que a verificação
       // deixar de ser obrigatória; hoje ele não é alcançado.
+      window.track('conta_criada');
       if (data.requiresVerification) return onEmailPending?.(data.email);
       onComplete?.(data.user, data.token);
     } catch (e) {

@@ -384,6 +384,7 @@ function VerifyEmailScreen({ token, onGoToLogin }) {
           throw new Error(data.error || 'Link inválido.');
         }
         setStatus('success');
+        window.track('email_verificado');
       })
       .catch(err => {
         setErrorMsg(err.message);
