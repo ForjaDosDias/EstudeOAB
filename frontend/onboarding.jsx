@@ -15,8 +15,8 @@ const { useState: useStateOnb, useEffect: useEffectOnb } = React;
    "nenhuma" — é o que o botão "quero estudar todas as matérias" grava.
 
    ⚠️ VOCABULÁRIO: aqui só existe UM nível, a MATÉRIA (as 13 de `area_direito`).
-   A aplicação tem um segundo nível — os 79 registros da tabela `temas`, que são
-   as unidades de estudo dentro de cada matéria — e ele NÃO aparece no
+   A aplicação tem um segundo nível — os 79 registros da tabela `subtemas`, que
+   são as unidades de estudo dentro de cada matéria — e ele NÃO aparece no
    onboarding. Misturar os dois foi um erro real: escolher "Constitucional" e
    ler "4 temas" só faz sentido para quem já sabe que existe o nível de baixo.
    Nunca use a palavra "tema" nestas telas.
@@ -29,7 +29,7 @@ const PRE_SELECIONADAS = 5;
 
 const FRASES_MONTAGEM = [
   'Lendo a incidência dos últimos exames…',
-  'Ordenando seus temas pelo que mais cai…',
+  'Ordenando seus assuntos pelo que mais cai…',
   'Montando sua trilha…',
 ];
 
@@ -72,7 +72,7 @@ function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
 
     window.apiFetch(`/trilhas/preview${qs}`)
       .then((d) => d)
-      .catch(() => ({ disciplinas: [], total_temas: 0 }))
+      .catch(() => ({ disciplinas: [] }))
       .then((d) => {
         const espera = Math.max(0, MONTAGEM_MIN_MS - (Date.now() - inicio));
         setTimeout(() => {

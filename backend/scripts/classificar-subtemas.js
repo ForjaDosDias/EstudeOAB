@@ -1,22 +1,22 @@
 /**
- * Classifica as questões no catálogo da tabela `temas`.
+ * Classifica as questões no catálogo da tabela `subtemas`.
  *
- * A coluna legada `questions.tema` é texto livre (~236 valores distintos para
+ * A coluna `questions.tema_importado` é texto livre (~236 valores distintos para
  * 238 questões) e não agrupa nada. A trilha por incidência precisa de um
- * catálogo fechado — este script preenche `questions.tema_id`.
+ * catálogo fechado — este script preenche `questions.subtema_id`.
  *
  * Uso:
- *   docker exec estudeoab-backend-1 node scripts/classificar-temas.js
- *   docker exec estudeoab-backend-1 node scripts/classificar-temas.js --limit 20
- *   docker exec estudeoab-backend-1 node scripts/classificar-temas.js --dry-run
+ *   docker exec estudeoab-backend-1 node scripts/classificar-subtemas.js
+ *   docker exec estudeoab-backend-1 node scripts/classificar-subtemas.js --limit 20
+ *   docker exec estudeoab-backend-1 node scripts/classificar-subtemas.js --dry-run
  *
- * Idempotente: só processa questões com `tema_id IS NULL`, então pode rodar
+ * Idempotente: só processa questões com `subtema_id IS NULL`, então pode rodar
  * quantas vezes for preciso, em lotes.
  *
  * Regras de segurança da classificação:
- *  - a IA escolhe apenas entre os temas JÁ cadastrados da mesma área da questão;
+ *  - a IA escolhe apenas entre os subtemas JÁ cadastrados da mesma matéria;
  *    slug inventado é descartado, o script nunca cria tema novo;
- *  - sem correspondência clara, a questão fica com `tema_id NULL` e vai para
+ *  - sem correspondência clara, a questão fica com `subtema_id NULL` e vai para
  *    revisão humana no /admin. Errar para menos é melhor que rotular errado.
  */
 
@@ -44,7 +44,7 @@ function makeClient() {
 
 function montarPrompt(questao, temasCandidatos, escopo) {
   const catalogo = temasCandidatos.map((t) => `- ${t.slug}: ${t.nome}`).join('\n');
-  return `Você classifica questões da OAB em um catálogo fechado de temas.
+  return `Você classifica questões da OAB em um catálogo fechado de subtemas.
 
 CATÁLOGO (${escopo}) — escolha exatamente um slug desta lista:
 ${catalogo}
@@ -61,10 +61,10 @@ Nunca invente um slug que não esteja na lista.`;
 
 async function main() {
   const { rows: temas } = await pool.query(
-    'SELECT id, slug, nome, disciplina FROM temas WHERE ativo ORDER BY disciplina, nome'
+    'SELECT id, slug, nome, disciplina FROM subtemas WHERE ativo ORDER BY disciplina, nome'
   );
   if (!temas.length) {
-    console.error('Catálogo de temas vazio — rode o seed de `temas` antes.');
+    console.error('Catálogo de subtemas vazio — rode o seed de `subtemas` antes.');
     process.exit(1);
   }
 
@@ -74,12 +74,12 @@ async function main() {
   const { rows: questoes } = await pool.query(
     `SELECT id, enunciado, area_direito
        FROM questions
-      WHERE tema_id IS NULL AND enunciado IS NOT NULL
+      WHERE subtema_id IS NULL AND enunciado IS NOT NULL
       ORDER BY id
       ${LIMITE ? 'LIMIT ' + LIMITE : ''}`
   );
 
-  console.log(`${questoes.length} questão(ões) sem tema · catálogo com ${temas.length} temas`);
+  console.log(`${questoes.length} questão(ões) sem subtema · catálogo com ${temas.length} subtemas`);
   if (DRY_RUN) console.log('--dry-run: nada será gravado\n');
 
   const client = makeClient();
@@ -133,7 +133,7 @@ async function main() {
         semCorrespondencia++;
       } else {
         if (!DRY_RUN) {
-          await pool.query('UPDATE questions SET tema_id = $1 WHERE id = $2', [tema.id, q.id]);
+          await pool.query('UPDATE questions SET subtema_id = $1 WHERE id = $2', [tema.id, q.id]);
         }
         console.log(
           `  #${q.id} [${q.area_direito}] → ${tema.nome} (${confianca || '?'})` +
@@ -155,7 +155,7 @@ async function main() {
       `sem_correspondencia=${semCorrespondencia} erros=${erros}`
   );
   if (semCorrespondencia) {
-    console.log('As não classificadas ficam com tema_id NULL para revisão no /admin.');
+    console.log('As não classificadas ficam com subtema_id NULL para revisão no /admin.');
   }
   await pool.end();
 }

@@ -43,7 +43,7 @@ function publicUser(row) {
 }
 
 /**
- * Valida as disciplinas de foco contra o catálogo real (`temas.disciplina`).
+ * Valida as disciplinas de foco contra o catálogo real (`subtemas.disciplina`).
  *
  * A lista de válidos sai do banco, não de um array no código: foi uma lista
  * chumbada e desatualizada (`trib` em vez de `trib e proc trib`) que fez a
@@ -59,7 +59,7 @@ async function validarFoco(lista) {
   const valores = [...new Set(lista.map((s) => String(s).trim()).filter(Boolean))];
   if (!valores.length) return { ok: true, valores: [] };
 
-  const r = await pool.query('SELECT DISTINCT disciplina FROM temas WHERE ativo');
+  const r = await pool.query('SELECT DISTINCT disciplina FROM subtemas WHERE ativo');
   const validas = new Set(r.rows.map((x) => x.disciplina));
   const invalidas = valores.filter((v) => !validas.has(v));
   if (invalidas.length) {

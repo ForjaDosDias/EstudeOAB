@@ -33,8 +33,8 @@ CREATE TABLE IF NOT EXISTS questions (
   gabarito       VARCHAR(1),
   area_direito   VARCHAR(100),
   materia        VARCHAR(200),
-  tema           VARCHAR(200),
-  subtema        VARCHAR(200),
+  tema_importado    VARCHAR(200),   -- texto livre do CSV: rótulo por questão, não agrupa
+  subtema_importado VARCHAR(200),   -- idem. O catálogo curado é a tabela `subtemas`
   legislacao_ref TEXT,
   dificuldade    VARCHAR(50),
   observacoes    TEXT,
@@ -246,14 +246,20 @@ ON CONFLICT (slug) DO NOTHING;
 CREATE INDEX IF NOT EXISTS idx_questions_area_dif ON questions(area_direito, dificuldade);
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- Taxonomia de temas (2026-08-06)
+-- Catálogo de SUBTEMAS (2026-08-06 · renomeado de `temas` em 2026-08-08)
 --
--- A coluna legada `questions.tema` é texto livre e tem ~236 valores distintos
--- para 238 questões: é um rótulo por questão, não agrupa nada. A trilha por
--- incidência precisa de um catálogo fechado, que é esta tabela. A coluna antiga
--- fica intacta para preservar o histórico da classificação original.
+-- Dois níveis, e só estes dois:
+--   MATÉRIA  = questions.area_direito, 13 valores. É o que o aluno escolhe.
+--   SUBTEMA  = esta tabela, 79 registros. É a unidade de estudo dentro da matéria.
+--
+-- Chamava-se `temas` e colidia com a matéria na cabeça de quem lia: escolher
+-- "Constitucional" e ver "4 temas" sugere ter escolhido quatro coisas.
+--
+-- `questions.tema_importado` é texto livre do CSV, ~236 valores distintos para
+-- 238 questões — um rótulo por questão, que não agrupa nada. Fica intacto pelo
+-- histórico; a trilha por incidência usa este catálogo fechado.
 -- ─────────────────────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS temas (
+CREATE TABLE IF NOT EXISTS subtemas (
   id         SERIAL PRIMARY KEY,
   slug       VARCHAR(160) UNIQUE NOT NULL,
   nome       VARCHAR(200) NOT NULL,
@@ -261,9 +267,9 @@ CREATE TABLE IF NOT EXISTS temas (
   ativo      BOOLEAN DEFAULT TRUE
 );
 
-ALTER TABLE questions ADD COLUMN IF NOT EXISTS tema_id INTEGER REFERENCES temas(id);
-CREATE INDEX IF NOT EXISTS idx_questions_tema ON questions(tema_id);
-INSERT INTO temas (slug, nome, disciplina) VALUES
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS subtema_id INTEGER REFERENCES subtemas(id);
+CREATE INDEX IF NOT EXISTS idx_questions_subtema ON questions(subtema_id);
+INSERT INTO subtemas (slug, nome, disciplina) VALUES
   ('penal-crimes-contra-a-pessoa', 'Crimes contra a pessoa', 'penal'),
   ('const-organizacao-do-estado-federacao', 'Organização do Estado / Federação', 'const'),
   ('const-direito-internacional-privado', 'Direito Internacional Privado', 'const'),
@@ -397,7 +403,7 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS areas_foco TEXT[] DEFAULT '{}';
 UPDATE users u
    SET areas_foco = ARRAY(
          SELECT DISTINCT t.disciplina
-           FROM temas t
+           FROM subtemas t
           WHERE t.ativo AND NOT (t.disciplina = ANY(u.areas_excluidas)))
  WHERE COALESCE(array_length(u.areas_excluidas, 1), 0) > 0
    AND COALESCE(array_length(u.areas_foco, 1), 0) = 0;

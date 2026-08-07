@@ -66,6 +66,9 @@ window.AppData.areaInfo(id) // lookup com fallback — nunca devolve undefined
 
 ## Trilha e onboarding (08/08/2026)
 
+Vocabulário: **matéria** é o nível de cima (13, `area_direito`) e **subtema** o de
+baixo (79, tabela `subtemas`). Nunca "tema" — o aluno lê como a matéria inteira.
+
 `window.Shell.DisciplinaBolinha` é o componente compartilhado entre `onboarding.jsx`
 (tela 3) e `trilha.jsx`. A leitura de `window.Shell` acontece em tempo de render, então
 a ordem dos `<script>` no `index.html` não importa.

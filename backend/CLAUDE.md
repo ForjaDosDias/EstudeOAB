@@ -49,8 +49,8 @@ GET    /api/ads/config            — config de anúncios (Free: AdSense 30s)   
 GET    /api/trilhas/preview       — disciplinas + temas por incidência (SEM auth — tela do onboarding)
 GET    /api/trilhas               — lista trilhas de estudo                   [requireAuth]
 GET    /api/trilhas/:slug/questoes — sorteia questões da trilha               [requireAuth]
-GET    /api/trilhas/:slug/mapa    — disciplina → temas + progresso            [requireAuth]
-GET    /api/trilhas/:slug/tema/:id/questoes — questões do tema; 423 se travado [requireAuth]
+GET    /api/trilhas/:slug/mapa    — matéria → subtemas + progresso            [requireAuth]
+GET    /api/trilhas/:slug/subtema/:id/questoes — questões; 423 se travado      [requireAuth]
 
 GET    /api/health                 — { ok, db }
 ```
@@ -71,7 +71,7 @@ GET    /api/health                 — { ok, db }
 
 **users**: `id, email, password_hash, nome, role (user|admin), edicao, minutos_dia, area_segunda_fase, data_prova, xp, streak, ultima_atividade`
 
-**questions**: `id, external_id (UNIQUE), banca, prova, edicao, ano, numero_questao, enunciado, comando, alternativa_a/b/c/d, gabarito (A-D), area_direito, materia, tema, subtema, legislacao_ref, dificuldade (baixa|media|alta), explicacao, observacoes`
+**questions**: `id, external_id (UNIQUE), banca, prova, edicao, ano, numero_questao, enunciado, comando, alternativa_a/b/c/d, gabarito (A-D), area_direito, materia, tema_importado, subtema_importado, subtema_id → subtemas(id), legislacao_ref, dificuldade (baixa|media|alta), explicacao, observacoes`
 
 **sessions**: `id, user_id, modo (rapida|simulado|personalizado), areas[], total_questoes, acertos, tempo_total_s, xp_ganho, concluida, concluida_em`
 
@@ -146,10 +146,23 @@ mundo.
   de uma lista no código — foi uma lista chumbada (`trib` em vez de
   `trib e proc trib`) que fez a Publicista prometer Tributário e devolver zero.
 
-- Catálogo em `temas` (79 registros) + `questions.tema_id`. A coluna legada
-  `questions.tema` é texto livre com ~236 valores distintos para 238 questões —
-  não agrupa nada e não é usada pela trilha.
-- Classificação: `scripts/classificar-temas.js` (DeepSeek). 235/238 classificadas;
-  o resto fica `tema_id NULL` para revisão humana e simplesmente não aparece no mapa.
-- A trava é recalculada no servidor em `/tema/:id/questoes` → **423
+- Catálogo em `subtemas` (79 registros) + `questions.subtema_id`. As colunas
+  `questions.tema_importado` / `subtema_importado` são texto livre do CSV, com
+  ~236 valores distintos para 238 questões — não agrupam nada e a trilha não as usa.
+- Classificação: `scripts/classificar-subtemas.js` (DeepSeek). 235/238 classificadas;
+  o resto fica `subtema_id NULL` para revisão humana e não aparece no mapa.
+- A trava é recalculada no servidor em `/subtema/:id/questoes` → **423
   CHECKPOINT_LOCKED**. O front nunca é a única barreira.
+
+### Vocabulário — dois níveis, nunca três (08/08/2026)
+
+| Nível | Banco | Interface |
+|---|---|---|
+| de cima | `questions.area_direito` (13) · `subtemas.disciplina` | **matéria** |
+| de baixo | tabela `subtemas` (79) · `questions.subtema_id` | **subtema** |
+
+A tabela se chamava `temas` e a interface dizia "tema" para o nível de baixo —
+quem escolhia "Constitucional" lia "4 temas" e entendia ter escolhido quatro
+coisas. Migração em `database/migrations/2026-08-08-temas-viram-subtemas.sql`.
+No código o campo é `disciplina` e não `materia` porque `questions.materia` já
+existe como texto livre do CSV; são o mesmo conceito, não dois.

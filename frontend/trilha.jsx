@@ -6,9 +6,9 @@ const { useState: useStateTrilha, useEffect: useEffectTrilha, useCallback: useCa
 // alta incidência continuam vindo antes e travando os seguintes.
 //
 // ⚠️ VOCABULÁRIO: na interface, "matéria" é o nível de cima (as 13 de
-// `area_direito`) e "subtema" é o de baixo (os 79 da tabela `temas`, que são as
-// unidades de estudo). O banco chama o nível de baixo de `tema` — a interface
-// não pode, porque o aluno lê "tema" como a matéria inteira.
+// `area_direito`) e "subtema" é o de baixo (os 79 da tabela `subtemas`). Os
+// dois nomes são os mesmos no banco desde 08/08/2026 — não reintroduzir a
+// palavra "tema" para o nível de baixo, o aluno a lê como a matéria inteira.
 const FAIXA_INFO = {
   alta:    { titulo: 'alta incidência',    cor: 'var(--bordo)' },
   media:   { titulo: 'incidência média',   cor: 'var(--amarelo-dark)' },
@@ -20,9 +20,9 @@ const FAIXA_INFO = {
 const SLUG_PESSOAL = 'minha';
 
 /* =========================================================
-   Trilha por disciplina — o aluno escolhe a matéria e, dentro dela, domina o
-   que mais cai antes de gastar tempo no que cai pouco. Um tema só abre quando
-   os de incidência maior da MESMA disciplina estiverem concluídos.
+   Trilha por matéria — o aluno escolhe a matéria e, dentro dela, domina o que
+   mais cai antes de gastar tempo no que cai pouco. Um subtema só abre quando
+   os de incidência maior da MESMA matéria estiverem concluídos.
    ========================================================= */
 function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
   const [phase,   setPhase]   = useStateTrilha('map'); // map | pick | run | result
@@ -49,19 +49,19 @@ function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
 
   const escolherTrilha = (t) => { setAberta(null); setPhase('map'); carregarMapa(t.slug); };
 
-  const iniciarTema = async (tema) => {
+  const iniciarSubtema = async (sub) => {
     setErro(null);
     try {
-      const data = await window.apiFetch(`/trilhas/${trilha.slug}/tema/${tema.tema_id}/questoes?total=10`);
+      const data = await window.apiFetch(`/trilhas/${trilha.slug}/subtema/${sub.subtema_id}/questoes?total=10`);
       if (!data.questoes || data.questoes.length === 0) {
-        setErro('Esse tema ainda não tem questões cadastradas.');
+        setErro('Esse subtema ainda não tem questões cadastradas.');
         return;
       }
       const sess = await window.apiFetch('/sessions', {
         method: 'POST',
         body: JSON.stringify({
           modo: 'personalizado',
-          areas: [tema.disciplina],
+          areas: [sub.disciplina],
           total_questoes: data.questoes.length,
         }),
       });
@@ -76,14 +76,14 @@ function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
       if (e?.code === 'CHECKPOINT_LOCKED') {
         setErro('Bloqueado — conclua os subtemas de maior incidência desta matéria primeiro.');
       } else {
-        setErro(e?.error || 'Erro ao iniciar o tema.');
+        setErro(e?.error || 'Erro ao iniciar o subtema.');
       }
     }
   };
 
   const voltarAoMapa = () => { setSession(null); setPhase('map'); carregarMapa(trilha.slug); };
 
-  // ── Rodando um tema pelo runner de prática (registra respostas) ────────────
+  // ── Rodando um subtema pelo runner de prática (registra respostas) ─────────
   if (phase === 'run' && session) {
     return (
       <window.Practice.PracticeRunner
@@ -130,7 +130,7 @@ function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
     );
   }
 
-  // ── Mapa: disciplina → temas ──────────────────────────────────────────────
+  // ── Mapa: matéria → subtemas ──────────────────────────────────────────────
   const discAberta = (discs || []).find((d) => d.disciplina === aberta);
 
   return (
@@ -174,7 +174,7 @@ function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
                       onClick={() => setAberta(aberta === d.disciplina ? null : d.disciplina)}
                     />
                     <div className="trilha-parada-label">{a.label}</div>
-                    <div className="trilha-parada-sub">{d.concluidos}/{d.total_temas} subtemas</div>
+                    <div className="trilha-parada-sub">{d.concluidos}/{d.total_subtemas} subtemas</div>
                     <div className="trilha-parada-barra">
                       <div className="trilha-parada-barra-fill"
                            style={{ width: `${d.pct}%`, background: a.cor }} />
@@ -195,20 +195,20 @@ function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
               {areaInfo(discAberta.disciplina).label}
             </span>
             <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-              {discAberta.total_temas} subtemas · ~{discAberta.incidencia_total} questões/prova
+              {discAberta.total_subtemas} subtemas · ~{discAberta.incidencia_total} questões/prova
             </span>
             <button className="btn btn-quiet" style={{ marginLeft: 'auto', padding: '4px 10px' }}
                     onClick={() => setAberta(null)}>✕</button>
           </div>
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {discAberta.temas.map((t) => {
+            {discAberta.subtemas.map((t) => {
               const info = FAIXA_INFO[t.faixa] || FAIXA_INFO.pontual;
               const selo = t.bloqueado ? '🔒' : t.concluido ? '✓' : '▶';
               return (
                 <button
-                  key={t.tema_id}
-                  onClick={() => !t.bloqueado && iniciarTema(t)}
+                  key={t.subtema_id}
+                  onClick={() => !t.bloqueado && iniciarSubtema(t)}
                   disabled={t.bloqueado}
                   className="card"
                   style={{

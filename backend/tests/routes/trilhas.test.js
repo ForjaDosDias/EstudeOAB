@@ -28,14 +28,14 @@ const fakeTrilha = {
 };
 
 /**
- * Catálogo de temas com a incidência que o SQL calcula (questões / edições).
+ * Catálogo de subtemas com a incidência que o SQL calcula (questões / edições).
  * As faixas saem daqui: >= 1.5 alta · >= 1.0 média · resto pontual.
  *
  * `civil` só existe na faixa pontual de propósito — é o caso "faixa vazia não
  * bloqueia": disciplina que não aparece nas faixas anteriores não pode chegar
  * travada na sua.
  */
-const temasRows = {
+const subtemasRows = {
   rows: [
     { id: 10, nome: 'Controle de constitucionalidade', slug: 't10', disciplina: 'const', total: 6, incidencia: '2.0' },
     { id: 11, nome: 'Sigilo profissional',             slug: 't11', disciplina: 'etica', total: 5, incidencia: '1.67' },
@@ -49,51 +49,51 @@ const temasRows = {
 // Controle de constitucionalidade está começado e ainda não concluído.
 const perfRows = {
   rows: [
-    { tema_id: 11, respondidas: 5, acertos: 4 },
-    { tema_id: 10, respondidas: 2, acertos: 2 },
+    { subtema_id: 11, respondidas: 5, acertos: 4 },
+    { subtema_id: 10, respondidas: 2, acertos: 2 },
   ],
 };
 
 // O filtro de disciplina acontece no SQL (`WHERE t.disciplina = ANY($1)`). O
 // mock precisa imitar isso, senão o teste de foco afirmaria algo que não
 // consegue provar — devolveria as disciplinas de fora do foco de qualquer jeito.
-function filtrar(temas, disciplinas) {
-  if (!disciplinas) return temas;
-  return { rows: temas.rows.filter((t) => disciplinas.includes(t.disciplina)) };
+function filtrar(subtemas, disciplinas) {
+  if (!disciplinas) return subtemas;
+  return { rows: subtemas.rows.filter((t) => disciplinas.includes(t.disciplina)) };
 }
 
 /** Trilha do catálogo: o foco do aluno NÃO recorta (ele pediu essa trilha). */
-function mockMapaCatalogo(temas = temasRows, perf = perfRows) {
+function mockMapaCatalogo(subtemas = subtemasRows, perf = perfRows) {
   pool.query
     .mockResolvedValueOnce({ rows: [fakeTrilha] }) // resolverTrilha
-    .mockResolvedValueOnce(temas)                  // incidência por tema
+    .mockResolvedValueOnce(subtemas)               // incidência por subtema
     .mockResolvedValueOnce(perf);                  // progresso do aluno
 }
 
 /** Trilha pessoal (`minha`): as áreas vêm de users.areas_foco. */
-function mockMapaPessoal(foco, temas = temasRows, perf = perfRows) {
+function mockMapaPessoal(foco, subtemas = subtemasRows, perf = perfRows) {
   pool.query.mockResolvedValueOnce({ rows: [{ areas_foco: foco }] }); // focoDoUsuario
   if (!foco.length) {
     // foco vazio = todas: o servidor busca o universo de disciplinas ativas
     pool.query.mockResolvedValueOnce({
-      rows: [...new Set(temas.rows.map((t) => t.disciplina))].map((disciplina) => ({ disciplina })),
+      rows: [...new Set(subtemas.rows.map((t) => t.disciplina))].map((disciplina) => ({ disciplina })),
     });
   }
   pool.query
-    .mockResolvedValueOnce(filtrar(temas, foco.length ? foco : null))
+    .mockResolvedValueOnce(filtrar(subtemas, foco.length ? foco : null))
     .mockResolvedValueOnce(perf);
 }
 
 const get = (url) => request(app).get(url).set('Authorization', `Bearer ${token()}`);
 
-/** Achata o mapa em disciplina → [tema_id], para asserções legíveis. */
+/** Achata o mapa em matéria → [subtema_id], para asserções legíveis. */
 function porDisciplina(body) {
-  return Object.fromEntries(body.disciplinas.map((d) => [d.disciplina, d.temas.map((t) => t.tema_id)]));
+  return Object.fromEntries(body.disciplinas.map((d) => [d.disciplina, d.subtemas.map((t) => t.subtema_id)]));
 }
 
-function acharTema(body, temaId) {
+function acharSubtema(body, subtemaId) {
   for (const d of body.disciplinas) {
-    const t = d.temas.find((x) => x.tema_id === temaId);
+    const t = d.subtemas.find((x) => x.subtema_id === subtemaId);
     if (t) return t;
   }
   return null;
@@ -136,20 +136,20 @@ describe('GET /api/trilhas/:slug/mapa', () => {
 
   // Guardrail: a faixa continua derivada da incidência real, mesmo agora que
   // ela não é mais a seção de primeiro nível da resposta.
-  it('classifica os temas na faixa certa pela incidência', async () => {
+  it('classifica os subtemas na faixa certa pela incidência', async () => {
     mockMapaCatalogo();
     const res = await get('/api/trilhas/essencial-1a-fase/mapa');
 
-    expect(acharTema(res.body, 10).faixa).toBe('alta');    // 2.0
-    expect(acharTema(res.body, 11).faixa).toBe('alta');    // 1.67
-    expect(acharTema(res.body, 12).faixa).toBe('media');   // 1.0 exato entra na média
-    expect(acharTema(res.body, 13).faixa).toBe('media');
-    expect(acharTema(res.body, 14).faixa).toBe('pontual'); // 0.33
+    expect(acharSubtema(res.body, 10).faixa).toBe('alta');    // 2.0
+    expect(acharSubtema(res.body, 11).faixa).toBe('alta');    // 1.67
+    expect(acharSubtema(res.body, 12).faixa).toBe('media');   // 1.0 exato entra na média
+    expect(acharSubtema(res.body, 13).faixa).toBe('media');
+    expect(acharSubtema(res.body, 14).faixa).toBe('pontual'); // 0.33
   });
 
   // Guardrail do reagrupamento: dentro da disciplina, o que mais cai vem antes.
   // É a ordem que define a progressão — inverter aqui destrava tema na ordem errada.
-  it('ordena os temas de cada disciplina da maior para a menor incidência', async () => {
+  it('ordena os subtemas de cada matéria da maior para a menor incidência', async () => {
     mockMapaCatalogo();
     const res = await get('/api/trilhas/essencial-1a-fase/mapa');
 
@@ -171,8 +171,8 @@ describe('GET /api/trilhas/:slug/mapa', () => {
     mockMapaCatalogo();
     const res = await get('/api/trilhas/essencial-1a-fase/mapa');
 
-    expect(acharTema(res.body, 11)).toMatchObject({ concluido: true, pct: 80 });
-    expect(acharTema(res.body, 10)).toMatchObject({ concluido: false }); // 2 < mínimo de 5
+    expect(acharSubtema(res.body, 11)).toMatchObject({ concluido: true, pct: 80 });
+    expect(acharSubtema(res.body, 10)).toMatchObject({ concluido: false }); // 2 < mínimo de 5
   });
 
   // Guardrail central: o tema de incidência menor só abre quando o de incidência
@@ -183,9 +183,9 @@ describe('GET /api/trilhas/:slug/mapa', () => {
     const res = await get('/api/trilhas/essencial-1a-fase/mapa');
 
     // const não concluiu o tema de alta (10) → o de média (12) segue travado
-    expect(acharTema(res.body, 12).bloqueado).toBe(true);
+    expect(acharSubtema(res.body, 12).bloqueado).toBe(true);
     // etica concluiu o de alta (11) → o de média (13) abre
-    expect(acharTema(res.body, 13).bloqueado).toBe(false);
+    expect(acharSubtema(res.body, 13).bloqueado).toBe(false);
   });
 
   // Guardrail: faixa vazia é pulada, não vira barreira.
@@ -195,10 +195,10 @@ describe('GET /api/trilhas/:slug/mapa', () => {
 
     const civil = res.body.disciplinas.find((d) => d.disciplina === 'civil');
     expect(civil.bloqueado).toBe(false); // civil não tem tema em alta nem em média
-    expect(acharTema(res.body, 14).bloqueado).toBe(false);
+    expect(acharSubtema(res.body, 14).bloqueado).toBe(false);
   });
 
-  // Guardrail: questão sem tema_id fica fora do mapa e não inventa faixa.
+  // Guardrail: questão sem subtema_id fica fora do mapa e não inventa faixa.
   it('devolve mapa vazio quando nenhuma questão está classificada', async () => {
     mockMapaCatalogo({ rows: [] }, { rows: [] });
     const res = await get('/api/trilhas/essencial-1a-fase/mapa');
@@ -223,11 +223,11 @@ describe('foco de disciplinas', () => {
     expect(res.body.foco).toEqual(['const']);
   });
 
-  it('a query de temas nunca recebe disciplina fora do foco', async () => {
+  it('a query de subtemas nunca recebe matéria fora do foco', async () => {
     mockMapaPessoal(['const', 'civil']);
     await get('/api/trilhas/minha/mapa');
 
-    const queryTemas = pool.query.mock.calls.find((c) => /FROM temas t/.test(c[0]));
+    const queryTemas = pool.query.mock.calls.find((c) => /FROM subtemas t/.test(c[0]));
     expect(queryTemas[1][0].sort()).toEqual(['civil', 'const']); // sem 'etica'
   });
 
@@ -253,21 +253,21 @@ describe('foco de disciplinas', () => {
   });
 });
 
-describe('GET /api/trilhas/:slug/tema/:temaId/questoes', () => {
-  it('400 para id de tema inválido', async () => {
-    expect((await get('/api/trilhas/essencial-1a-fase/tema/abc/questoes')).status).toBe(400);
+describe('GET /api/trilhas/:slug/subtema/:subtemaId/questoes', () => {
+  it('400 para id de subtema inválido', async () => {
+    expect((await get('/api/trilhas/essencial-1a-fase/subtema/abc/questoes')).status).toBe(400);
   });
 
-  it('404 quando o tema não pertence à trilha', async () => {
+  it('404 quando o subtema não pertence à trilha', async () => {
     mockMapaCatalogo();
-    expect((await get('/api/trilhas/essencial-1a-fase/tema/999/questoes')).status).toBe(404);
+    expect((await get('/api/trilhas/essencial-1a-fase/subtema/999/questoes')).status).toBe(404);
   });
 
   // Guardrail mais importante: a trava é recalculada no servidor. Chamar a API
   // direto, sem passar pela interface, não pode liberar o tema.
-  it('423 CHECKPOINT_LOCKED para tema bloqueado', async () => {
+  it('423 CHECKPOINT_LOCKED para subtema bloqueado', async () => {
     mockMapaCatalogo();
-    const res = await get('/api/trilhas/essencial-1a-fase/tema/12/questoes'); // const, faixa média
+    const res = await get('/api/trilhas/essencial-1a-fase/subtema/12/questoes'); // const, faixa média
     expect(res.status).toBe(423);
     expect(res.body.code).toBe('CHECKPOINT_LOCKED');
   });
@@ -275,40 +275,40 @@ describe('GET /api/trilhas/:slug/tema/:temaId/questoes', () => {
   // A trilha pessoal passa pela mesma trava — o slug novo não é atalho.
   it('423 também na trilha pessoal', async () => {
     mockMapaPessoal(['const']);
-    const res = await get('/api/trilhas/minha/tema/12/questoes');
+    const res = await get('/api/trilhas/minha/subtema/12/questoes');
     expect(res.status).toBe(423);
   });
 
   // Tema de disciplina fora do foco não existe na trilha do aluno: 404, nunca
   // um sorteio silencioso de questões que ele pediu para não estudar.
-  it('404 para tema de disciplina fora do foco', async () => {
+  it('404 para subtema de matéria fora do foco', async () => {
     mockMapaPessoal(['const']);
-    const res = await get('/api/trilhas/minha/tema/11/questoes'); // 11 é de etica
+    const res = await get('/api/trilhas/minha/subtema/11/questoes'); // 11 é de etica
     expect(res.status).toBe(404);
   });
 
-  it('200 sorteia questões de tema liberado', async () => {
+  it('200 sorteia questões de subtema liberado', async () => {
     mockMapaCatalogo();
     pool.query.mockResolvedValueOnce({
       rows: [{ id: 7, enunciado: 'Q', area_direito: 'const' }],
     });
 
-    const res = await get('/api/trilhas/essencial-1a-fase/tema/10/questoes?total=10');
+    const res = await get('/api/trilhas/essencial-1a-fase/subtema/10/questoes?total=10');
 
     expect(res.status).toBe(200);
     expect(res.body.questoes).toHaveLength(1);
-    expect(res.body.tema).toBe('Controle de constitucionalidade');
-    expect(pool.query.mock.calls.at(-1)[1]).toEqual([10, 10]); // filtra por tema_id
+    expect(res.body.subtema).toBe('Controle de constitucionalidade');
+    expect(pool.query.mock.calls.at(-1)[1]).toEqual([10, 10]); // filtra por subtema_id
   });
 });
 
 describe('GET /api/trilhas/preview', () => {
-  function mockPreview(foco, temas = temasRows) {
+  function mockPreview(foco, subtemas = subtemasRows) {
     pool.query
       .mockResolvedValueOnce({
-        rows: [...new Set(temas.rows.map((t) => t.disciplina))].map((disciplina) => ({ disciplina })),
+        rows: [...new Set(subtemas.rows.map((t) => t.disciplina))].map((disciplina) => ({ disciplina })),
       }) // todasDisciplinas
-      .mockResolvedValueOnce(filtrar(temas, foco))
+      .mockResolvedValueOnce(filtrar(subtemas, foco))
       .mockResolvedValueOnce({ rows: [] }); // preview é sempre progresso zero
   }
 
@@ -321,14 +321,14 @@ describe('GET /api/trilhas/preview', () => {
     mockPreview(null);
     const res = await request(app).get('/api/trilhas/preview'); // sem Authorization
     expect(res.status).toBe(200);
-    expect(res.body.total_temas).toBe(5);
+    expect(res.body.total_subtemas).toBe(5);
   });
 
   it('aplica o foco vindo da query string', async () => {
     mockPreview(['etica']);
     const res = await request(app).get('/api/trilhas/preview?foco=etica');
 
-    const queryTemas = pool.query.mock.calls.find((c) => /FROM temas t/.test(c[0]));
+    const queryTemas = pool.query.mock.calls.find((c) => /FROM subtemas t/.test(c[0]));
     expect(queryTemas[1][0]).toEqual(['etica']);
     expect(res.body.disciplinas.map((d) => d.disciplina)).toEqual(['etica']);
     expect(res.body.foco).toEqual(['etica']);

@@ -177,7 +177,7 @@ router.post('/upload', requireAdmin, upload.single('csv'), async (req, res) => {
               external_id, banca, prova, edicao, ano, data_aplicacao, tipo_prova,
               numero_questao, enunciado, comando, alternativa_a, alternativa_b,
               alternativa_c, alternativa_d, gabarito, area_direito, materia,
-              tema, subtema, legislacao_ref, dificuldade, observacoes, explicacao
+              tema_importado, subtema_importado, legislacao_ref, dificuldade, observacoes, explicacao
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
             ON CONFLICT (external_id) DO UPDATE SET
               banca          = EXCLUDED.banca,
@@ -196,8 +196,8 @@ router.post('/upload', requireAdmin, upload.single('csv'), async (req, res) => {
               gabarito       = EXCLUDED.gabarito,
               area_direito   = EXCLUDED.area_direito,
               materia        = EXCLUDED.materia,
-              tema           = EXCLUDED.tema,
-              subtema        = EXCLUDED.subtema,
+              tema_importado    = EXCLUDED.tema_importado,
+              subtema_importado = EXCLUDED.subtema_importado,
               legislacao_ref = EXCLUDED.legislacao_ref,
               dificuldade    = EXCLUDED.dificuldade,
               observacoes    = EXCLUDED.observacoes,
@@ -221,6 +221,10 @@ router.post('/upload', requireAdmin, upload.single('csv'), async (req, res) => {
               row.gabarito       || null,
               row.area_direito   || null,
               row.materia        || null,
+              // `row.*` são colunas do CSV, não do banco: o cabeçalho da
+              // planilha continua "tema"/"subtema". As colunas ganharam o
+              // sufixo `_importado` em 08/08/2026 para não se confundirem com
+              // `subtema_id`, que aponta para o catálogo curado.
               row.tema           || null,
               row.subtema        || null,
               row.legislacao_ref || null,
