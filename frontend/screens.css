@@ -1005,9 +1005,7 @@
 .onb-chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; border-radius: 30px; border: 1.5px solid var(--border-strong); background: transparent; color: var(--text-secondary); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all .15s; }
 .onb-chip.is-on { color: #fff; }
 .onb-chip.is-on .onb-chip-dot { background: #fff !important; }
-.onb-chip.is-on .onb-chip-inc { color: rgba(255,255,255,.75); }
 .onb-chip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.onb-chip-inc { font-size: 10px; opacity: .8; font-weight: 600; }
 .onb-contador { font-size: 12px; color: var(--text-muted); margin-top: 12px; }
 .onb-carregando { font-size: 13px; color: var(--text-muted); padding: 10px 0; }
 
@@ -1016,8 +1014,6 @@
 .onb-todas.is-on { border-style: solid; border-color: var(--green-dark); color: var(--green-dark); background: var(--green-wash); }
 .onb-todas:disabled { opacity: .45; cursor: default; }
 
-.onb-aviso { font-size: 12.5px; color: var(--text-secondary); padding: 10px 13px; background: var(--amarelo-wash); border: 1px solid var(--amarelo); border-radius: 10px; margin-top: 14px; }
-.onb-link { background: none; border: none; padding: 0; font: inherit; font-weight: 700; color: var(--bordo); cursor: pointer; text-decoration: underline; }
 
 .onb-spinner { width: 34px; height: 34px; margin: 0 auto 16px; border: 3px solid var(--border-strong); border-top-color: var(--bordo); border-radius: 50%; animation: onb-gira .8s linear infinite; }
 @keyframes onb-gira { to { transform: rotate(360deg); } }
@@ -1050,11 +1046,6 @@
 .trilha-parada-barra-fill { height: 100%; border-radius: 2px; transition: width .3s; }
 .trilha-conector { width: 26px; height: 3px; border-radius: 2px; background: var(--border-strong); margin-top: 27px; flex-shrink: 0; }
 
-.trilha-temas { margin-top: 14px; border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; }
-.trilha-tema { display: flex; align-items: center; gap: 10px; padding: 9px 13px; border-bottom: 1px solid var(--border-strong); font-size: 12.5px; }
-.trilha-tema:last-child { border-bottom: none; }
-.trilha-tema-nome { flex: 1; line-height: 1.35; }
-.trilha-tema-inc { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
 /* Meta diária no painel de conta */
 .profile-hint { font-size: 12.5px; color: var(--text-muted); margin-bottom: 10px; }

@@ -13,16 +13,19 @@ const { useState: useStateOnb, useEffect: useEffectOnb } = React;
    você NÃO quer"); agora é inclusão ("escolha o que você QUER focar"), sem
    teto. Quem mexer aqui precisa saber: `areas_foco = []` significa TODAS, não
    "nenhuma" — é o que o botão "quero estudar todas as matérias" grava.
+
+   ⚠️ VOCABULÁRIO: aqui só existe UM nível, a MATÉRIA (as 13 de `area_direito`).
+   A aplicação tem um segundo nível — os 79 registros da tabela `temas`, que são
+   as unidades de estudo dentro de cada matéria — e ele NÃO aparece no
+   onboarding. Misturar os dois foi um erro real: escolher "Constitucional" e
+   ler "4 temas" só faz sentido para quem já sabe que existe o nível de baixo.
+   Nunca use a palavra "tema" nestas telas.
    ========================================================= */
 
-// Quantas disciplinas já vêm marcadas. Não são fixas: são as N de maior
+// Quantas matérias já vêm marcadas. Não são fixas: são as N de maior
 // incidência, calculadas pelo servidor. Tela em branco obrigaria o aluno a
 // decidir antes de saber o que pesa na prova.
 const PRE_SELECIONADAS = 5;
-
-// Abaixo disso a tela 3 avisa que a trilha ficou curta. Não bloqueia: focar 1
-// disciplina é escolha legítima, só merece um aviso antes de virar surpresa.
-const TRILHA_CURTA = 10;
 
 const FRASES_MONTAGEM = [
   'Lendo a incidência dos últimos exames…',
@@ -40,7 +43,6 @@ function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
   const [catalogo, setCatalogo] = useStateOnb(null); // disciplinas + incidência, do servidor
   const [preview, setPreview] = useStateOnb(null);
   const [criandoConta, setCriandoConta] = useStateOnb(false);
-  const [aberta, setAberta] = useStateOnb(null); // disciplina expandida na tela 3
 
   const { areaInfo } = window.AppData;
 
@@ -155,7 +157,6 @@ function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
                 >
                   <span className="onb-chip-dot" style={{ background: a.cor }} />
                   {a.label}
-                  <span className="onb-chip-inc">{formatarIncidencia(d.incidencia_total)}/prova</span>
                 </button>
               );
             })}
@@ -182,10 +183,12 @@ function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
   // ── Tela de montagem ─────────────────────────────────────────────────────
   if (tela === 'montando') return <TelaMontando />;
 
-  // ── Tela 3 — trilha pronta, por disciplina ───────────────────────────────
+  // ── Tela 3 — trilha pronta ───────────────────────────────────────────────
+  // Só as matérias escolhidas, na ordem em que caem. Nada de contagem de
+  // subitens e nada de aviso de "trilha curta": focar em uma matéria só é
+  // escolha legítima, e o onboarding não é lugar de discutir a escolha do
+  // aluno — é lugar de confirmar que ela foi entendida.
   const disciplinas = preview?.disciplinas || [];
-  const totalTemas = preview?.total_temas || 0;
-  const curta = totalTemas > 0 && totalTemas < TRILHA_CURTA;
 
   return (
     <div className="onb-wrap fade-up">
@@ -193,39 +196,25 @@ function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
         <button className="onb-voltar" onClick={() => setTela(2)}>← Ajustar matérias</button>
         <h2 className="onb-h2">Pronto! Sua trilha está montada.</h2>
         <p className="onb-sub">
-          {totalTemas} temas nas matérias que você escolheu, do que mais cai para o que cai menos.
+          {disciplinas.length === 1
+            ? 'Sua trilha, montada com a matéria que você escolheu.'
+            : `Suas ${disciplinas.length} matérias, da que mais cai para a que menos cai na prova.`}
         </p>
 
         <div className="trilha-estacoes">
           {disciplinas.map((d, i) => {
             const a = areaInfo(d.disciplina);
-            const aberto = aberta === d.disciplina;
             return (
               <div key={d.disciplina} className="trilha-estacao">
                 <div className="trilha-parada">
-                  <window.Shell.DisciplinaBolinha
-                    area={d.disciplina}
-                    pct={d.pct}
-                    ativa={aberto}
-                    onClick={() => setAberta(aberto ? null : d.disciplina)}
-                  />
+                  <window.Shell.DisciplinaBolinha area={d.disciplina} />
                   <div className="trilha-parada-label">{a.label}</div>
-                  <div className="trilha-parada-sub">{d.total_temas} temas</div>
                 </div>
                 {i < disciplinas.length - 1 && <div className="trilha-conector" />}
               </div>
             );
           })}
         </div>
-
-        {aberta && <TemasDaDisciplina disc={disciplinas.find((d) => d.disciplina === aberta)} />}
-
-        {curta && (
-          <div className="onb-aviso">
-            Sua trilha tem só {totalTemas} temas — dá para incluir mais matérias e ganhar
-            cobertura. <button className="onb-link" onClick={() => setTela(2)}>Ajustar</button>
-          </div>
-        )}
 
         {criandoConta ? (
           <ContaForm
@@ -247,11 +236,6 @@ function OnboardingFlow({ onCancel, onComplete, onEmailPending }) {
   );
 }
 
-/* Uma casa decimal, vírgula: "2,3 questões" lê melhor que "2.30". */
-function formatarIncidencia(n) {
-  return `~${Number(n || 0).toFixed(1).replace('.', ',')}q`;
-}
-
 /* A espera é real (o preview está sendo montado), com piso de tempo para dar
    para ler. Trocar por um setTimeout puro seria mentira de interface. */
 function TelaMontando() {
@@ -268,20 +252,6 @@ function TelaMontando() {
         <div className="onb-spinner" />
         <div className="onb-montando-txt">{FRASES_MONTAGEM[i]}</div>
       </div>
-    </div>
-  );
-}
-
-function TemasDaDisciplina({ disc }) {
-  if (!disc) return null;
-  return (
-    <div className="trilha-temas fade-up">
-      {disc.temas.map((t) => (
-        <div key={t.tema_id} className="trilha-tema">
-          <span className="trilha-tema-nome">{t.nome}</span>
-          <span className="trilha-tema-inc">{formatarIncidencia(t.incidencia)}/prova</span>
-        </div>
-      ))}
     </div>
   );
 }

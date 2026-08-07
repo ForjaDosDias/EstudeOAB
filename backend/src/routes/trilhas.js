@@ -54,14 +54,17 @@ router.get('/preview', async (req, res) => {
     const faixas = await montarMapa(universo, 0, foco);
     const disciplinas = agruparPorDisciplina(faixas);
 
-    // Só o resumo — o preview é um cartão visual, não a trilha inteira.
+    // Só o resumo. O onboarding fala de MATÉRIA e nada mais: a lista de
+    // subtemas de cada uma não vai na resposta porque mostrá-la lá confundiu
+    // de verdade — quem escolhia "Constitucional" lia "4 temas" e achava que
+    // tinha escolhido quatro coisas. `incidencia_total` fica porque é o que
+    // define a ordem das matérias e a pré-seleção da tela 2.
     res.json({
       foco,
       disciplinas: disciplinas.map((d) => ({
         disciplina: d.disciplina,
         total_temas: d.total_temas,
         incidencia_total: d.incidencia_total,
-        temas: d.temas.map((t) => ({ tema_id: t.tema_id, nome: t.nome, incidencia: t.incidencia, faixa: t.faixa })),
       })),
       total_temas: disciplinas.reduce((s, d) => s + d.total_temas, 0),
     });

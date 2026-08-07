@@ -2,8 +2,13 @@
 const { useState: useStateTrilha, useEffect: useEffectTrilha, useCallback: useCallbackTrilha } = React;
 
 // Rótulo da faixa de incidência. Deixou de ser a seção de primeiro nível em
-// 2026-08-08 — virou etiqueta dentro do tema. A progressão não mudou: os temas
-// de alta incidência continuam vindo antes e travando os seguintes.
+// 2026-08-08 — virou etiqueta dentro do subtema. A progressão não mudou: os de
+// alta incidência continuam vindo antes e travando os seguintes.
+//
+// ⚠️ VOCABULÁRIO: na interface, "matéria" é o nível de cima (as 13 de
+// `area_direito`) e "subtema" é o de baixo (os 79 da tabela `temas`, que são as
+// unidades de estudo). O banco chama o nível de baixo de `tema` — a interface
+// não pode, porque o aluno lê "tema" como a matéria inteira.
 const FAIXA_INFO = {
   alta:    { titulo: 'alta incidência',    cor: 'var(--bordo)' },
   media:   { titulo: 'incidência média',   cor: 'var(--amarelo-dark)' },
@@ -69,7 +74,7 @@ function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
       setPhase('run');
     } catch (e) {
       if (e?.code === 'CHECKPOINT_LOCKED') {
-        setErro('Tema bloqueado — conclua os temas de maior incidência desta matéria primeiro.');
+        setErro('Bloqueado — conclua os subtemas de maior incidência desta matéria primeiro.');
       } else {
         setErro(e?.error || 'Erro ao iniciar o tema.');
       }
@@ -147,7 +152,7 @@ function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
 
       {!loading && discs && discs.length === 0 && (
         <div className="practice-setup-card" style={{ color: 'var(--text-muted)' }}>
-          Ainda não há questões classificadas por tema nas matérias que você escolheu.
+          Ainda não há questões cadastradas nas matérias que você escolheu.
           {' '}Você pode incluir outras em <strong>Minha conta</strong>.
         </div>
       )}
@@ -169,7 +174,7 @@ function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
                       onClick={() => setAberta(aberta === d.disciplina ? null : d.disciplina)}
                     />
                     <div className="trilha-parada-label">{a.label}</div>
-                    <div className="trilha-parada-sub">{d.concluidos}/{d.total_temas} temas</div>
+                    <div className="trilha-parada-sub">{d.concluidos}/{d.total_temas} subtemas</div>
                     <div className="trilha-parada-barra">
                       <div className="trilha-parada-barra-fill"
                            style={{ width: `${d.pct}%`, background: a.cor }} />
@@ -190,7 +195,7 @@ function TrilhaPage({ user, onExit, onNavigate, onUpgrade, onUserUpdate }) {
               {areaInfo(discAberta.disciplina).label}
             </span>
             <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-              {discAberta.total_temas} temas · ~{discAberta.incidencia_total} questões/prova
+              {discAberta.total_temas} subtemas · ~{discAberta.incidencia_total} questões/prova
             </span>
             <button className="btn btn-quiet" style={{ marginLeft: 'auto', padding: '4px 10px' }}
                     onClick={() => setAberta(null)}>✕</button>
