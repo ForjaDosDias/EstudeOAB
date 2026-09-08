@@ -1,0 +1,224 @@
+<!--
+  Página de referência estática (não faz parte da SPA — HTML puro de propósito,
+  pra ficar legível por crawlers/LLMs sem depender de JS/Babel rodando).
+  Conteúdo das 13 matérias copiado de AREAS em data.js — se uma matéria for
+  adicionada/renomeada lá, atualizar aqui também (não há sync automático).
+-->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guia OAB: as matérias mais cobradas e como estudar cada uma | Aprovado OAB</title>
+  <meta name="description" content="Guia de referência com as 13 matérias da 1ª fase do Exame da OAB, o que cada uma cobra e como estudar com questões reais de provas anteriores.">
+  <link rel="canonical" href="https://aprovadonaoab.com.br/guia-oab.html">
+
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Aprovado OAB">
+  <meta property="og:title" content="Guia OAB: as matérias mais cobradas e como estudar cada uma">
+  <meta property="og:description" content="As 13 matérias da 1ª fase do Exame da OAB, o que cada uma cobra e como estudar com questões reais.">
+  <meta property="og:url" content="https://aprovadonaoab.com.br/guia-oab.html">
+  <meta property="og:locale" content="pt_BR">
+
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="screens.css">
+  <style>
+    .guia-wrap { max-width: 760px; margin: 0 auto; padding: 40px 24px 80px; }
+    .guia-wrap h1 { font-family: var(--font-display); font-size: var(--text-3xl); margin-bottom: 16px; }
+    .guia-wrap h2 { font-family: var(--font-display); font-size: var(--text-xl); margin: 40px 0 16px; }
+    .guia-wrap p { margin-bottom: 14px; color: var(--text-secondary); }
+    .guia-cta { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 24px 0 8px; }
+    .materia { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border-subtle); }
+    .materia:last-child { border-bottom: none; }
+    .materia h3 { font-size: var(--text-md); margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+    .materia p { margin-bottom: 4px; }
+    .faq-item { margin-bottom: 18px; }
+    .faq-item h3 { font-size: var(--text-base); margin-bottom: 4px; color: var(--text-primary); }
+    footer.guia-footer { text-align: center; margin-top: 48px; }
+  </style>
+</head>
+<body>
+  <main class="guia-wrap">
+    <p><a href="/">← Aprovado OAB</a></p>
+    <h1>Guia OAB: as matérias mais cobradas e como estudar cada uma</h1>
+    <p>
+      A 1ª fase do Exame de Ordem (OAB) é aplicada pela FGV e cobra 80 questões de
+      múltipla escolha distribuídas entre as matérias do Estatuto da Advocacia
+      (Lei 8.906/94) e o edital vigente de cada exame. Passar exige acompanhar as
+      matérias com maior peso histórico e treinar com questões no formato real da
+      prova — é justamente isso que o Aprovado OAB organiza num só lugar.
+    </p>
+
+    <div class="guia-cta card card-pad">
+      <div>
+        <strong>Pratique com questões reais de provas anteriores</strong>
+        <p style="margin:4px 0 0">Banco de questões comentadas, trilha guiada por matéria e simulados — grátis pra começar.</p>
+      </div>
+      <a class="btn btn-cta" href="/">Começar agora</a>
+    </div>
+
+    <h2>As 13 matérias da 1ª fase da OAB</h2>
+
+    <section class="materia">
+      <h3><span class="area-pill area-pill-civil">CIVIL</span> Direito Civil</h3>
+      <p>Contratos, obrigações, responsabilidade civil, direitos reais e família — uma das matérias com maior número de questões na prova.</p>
+      <p><strong>Como estudar:</strong> foque nos institutos que mais aparecem em prova (contratos, responsabilidade civil) antes de partes mais periféricas do Código Civil.</p>
+    </section>
+
+    <section class="materia">
+      <h3><span class="area-pill area-pill-civil">P.CIVIL</span> Processo Civil</h3>
+      <p>Procedimento comum, recursos, tutela provisória e execução, conforme o CPC/2015.</p>
+      <p><strong>Como estudar:</strong> treine questões de prazos e cabimento de recursos — é onde a banca mais costuma pegar quem só decorou a teoria.</p>
+    </section>
+
+    <section class="materia">
+      <h3><span class="area-pill area-pill-const">CONST</span> Direito Constitucional</h3>
+      <p>Direitos e garantias fundamentais, organização do Estado e controle de constitucionalidade.</p>
+      <p><strong>Como estudar:</strong> domine bem os direitos fundamentais e o controle de constitucionalidade — concentram boa parte das questões dessa matéria.</p>
+    </section>
+
+    <section class="materia">
+      <h3><span class="area-pill area-pill-const">HUM</span> Direitos Humanos</h3>
+      <p>Tratados internacionais de direitos humanos e sua relação com o ordenamento brasileiro.</p>
+      <p><strong>Como estudar:</strong> priorize os tratados mais citados (Pacto de San José da Costa Rica) e a hierarquia deles frente à Constituição.</p>
+    </section>
+
+    <section class="materia">
+      <h3><span class="area-pill area-pill-penal">PENAL</span> Direito Penal</h3>
+      <p>Parte geral (crime, pena, tipicidade) e os crimes em espécie mais recorrentes em prova.</p>
+      <p><strong>Como estudar:</strong> a parte geral costuma valer mais questões que a parte especial — vale priorizar.</p>
+    </section>
+
+    <section class="materia">
+      <h3><span class="area-pill area-pill-penal">P.PENAL</span> Processo Penal</h3>
+      <p>Inquérito, prisões, procedimentos e recursos no processo penal.</p>
+      <p><strong>Como estudar:</strong> questões de prisão (flagrante, preventiva, temporária) e prazos aparecem com frequência.</p>
+    </section>
+
+    <section class="materia">
+      <h3><span class="area-pill area-pill-trabalho">TRAB</span> Direito do Trabalho</h3>
+      <p>Contrato de trabalho, jornada, verbas rescisórias e estabilidades.</p>
+      <p><strong>Como estudar:</strong> rescisão e verbas trabalhistas são o núcleo mais cobrado — comece por aí.</p>
+    </section>
+
+    <section class="materia">
+      <h3><span class="area-pill area-pill-trabalho">P.TRAB</span> Processo do Trabalho</h3>
+      <p>Competência da Justiça do Trabalho, procedimento e recursos trabalhistas.</p>
+      <p><strong>Como estudar:</strong> foque em competência e nos recursos típicos (RO, agravo de petição).</p>
+    </section>
+
+    <section class="materia">
+      <h3><span class="area-pill area-pill-adm">ADM</span> Direito Administrativo</h3>
+      <p>Atos administrativos, licitações, contratos administrativos e responsabilidade do Estado.</p>
+      <p><strong>Como estudar:</strong> licitações (Lei 14.133/21) e atos administrativos costumam concentrar as questões dessa matéria.</p>
+    </section>
+
+    <section class="materia">
+      <h3><span class="area-pill area-pill-etica">ÉTICA</span> Ética Profissional</h3>
+      <p>Estatuto da Advocacia (Lei 8.906/94) e Código de Ética e Disciplina da OAB.</p>
+      <p><strong>Como estudar:</strong> é a matéria com melhor retorno por hora de estudo — o universo de texto legal é pequeno e as questões se repetem em padrão.</p>
+    </section>
+
+    <section class="materia">
+      <h3><span class="area-pill area-pill-trib">TRIB</span> Direito Tributário</h3>
+      <p>Sistema Tributário Nacional, espécies de tributos, obrigação e crédito tributário.</p>
+      <p><strong>Como estudar:</strong> priorize os princípios constitucionais tributários e as espécies de tributo antes de entrar em regras específicas de cada imposto.</p>
+    </section>
+
+    <section class="materia">
+      <h3><span class="area-pill area-pill-adm">EMPRE</span> Direito Empresarial</h3>
+      <p>Sociedades empresárias, títulos de crédito, falência e recuperação judicial.</p>
+      <p><strong>Como estudar:</strong> recuperação judicial e falência (Lei 11.101/05) são o ponto mais cobrado da matéria.</p>
+    </section>
+
+    <section class="materia">
+      <h3><span class="area-pill area-pill-civil">COMP</span> Matérias Complementares</h3>
+      <p>Filosofia do Direito, Direito Internacional, Ambiental, do Consumidor e Eleitoral, conforme o edital.</p>
+      <p><strong>Como estudar:</strong> priorize Consumidor e Ambiental — costumam render mais questões que as demais complementares.</p>
+    </section>
+
+    <h2>Como estudar: trilha por incidência</h2>
+    <p>
+      Em vez de estudar tudo na mesma ordem do livro, a Trilha do Aprovado OAB organiza os
+      temas de cada matéria por incidência real em provas anteriores — alta, média ou
+      pontual — e libera o próximo tema conforme o aluno avança nos anteriores. Assim o
+      tempo de estudo vai primeiro para o que mais aparece na prova.
+    </p>
+
+    <h2>Modos de prática</h2>
+    <p><strong>Prática rápida:</strong> sessões curtas de ~5 questões, boas pra estudar todo dia sem compromisso de tempo.</p>
+    <p><strong>Simulado:</strong> 80 questões cronometradas, no formato completo da prova.</p>
+    <p><strong>Personalizado:</strong> escolha as matérias e a quantidade de questões da sessão.</p>
+
+    <h2>Perguntas frequentes</h2>
+
+    <div class="faq-item">
+      <h3>Quantas questões tem a 1ª fase do Exame da OAB?</h3>
+      <p>80 questões de múltipla escolha, aplicadas pela FGV.</p>
+    </div>
+    <div class="faq-item">
+      <h3>Quantas questões preciso acertar para passar?</h3>
+      <p>Como regra geral do exame, é preciso acertar pelo menos metade da prova (40 das 80 questões), conforme o edital de cada edição.</p>
+    </div>
+    <div class="faq-item">
+      <h3>Quais matérias mais caem na OAB?</h3>
+      <p>Direito Civil, Ética Profissional, Constitucional e Processo Civil costumam concentrar o maior número de questões, mas as 13 matérias do edital são cobradas em toda edição.</p>
+    </div>
+    <div class="faq-item">
+      <h3>O que é a Trilha do Aprovado OAB?</h3>
+      <p>Um percurso de estudo que organiza os temas de cada matéria por incidência real em provas anteriores, liberando o próximo tema conforme o aluno avança.</p>
+    </div>
+    <div class="faq-item">
+      <h3>O Aprovado OAB é gratuito?</h3>
+      <p>Sim — o plano gratuito dá acesso à prática com anúncios. O plano Premium (Pix ou cartão) remove os anúncios e libera estatísticas completas.</p>
+    </div>
+
+    <div class="guia-cta card card-pad">
+      <div>
+        <strong>Comece a treinar agora</strong>
+        <p style="margin:4px 0 0">Cadastro gratuito, questões reais de provas anteriores.</p>
+      </div>
+      <a class="btn btn-cta" href="/">Ir para o Aprovado OAB</a>
+    </div>
+
+    <footer class="guia-footer">
+      <p><a href="/">aprovadonaoab.com.br</a></p>
+    </footer>
+  </main>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Quantas questões tem a 1ª fase do Exame da OAB?",
+        "acceptedAnswer": { "@type": "Answer", "text": "80 questões de múltipla escolha, aplicadas pela FGV." }
+      },
+      {
+        "@type": "Question",
+        "name": "Quantas questões preciso acertar para passar?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Como regra geral do exame, é preciso acertar pelo menos metade da prova (40 das 80 questões), conforme o edital de cada edição." }
+      },
+      {
+        "@type": "Question",
+        "name": "Quais matérias mais caem na OAB?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Direito Civil, Ética Profissional, Constitucional e Processo Civil costumam concentrar o maior número de questões, mas as 13 matérias do edital são cobradas em toda edição." }
+      },
+      {
+        "@type": "Question",
+        "name": "O que é a Trilha do Aprovado OAB?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Um percurso de estudo que organiza os temas de cada matéria por incidência real em provas anteriores, liberando o próximo tema conforme o aluno avança." }
+      },
+      {
+        "@type": "Question",
+        "name": "O Aprovado OAB é gratuito?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Sim — o plano gratuito dá acesso à prática com anúncios. O plano Premium (Pix ou cartão) remove os anúncios e libera estatísticas completas." }
+      }
+    ]
+  }
+  </script>
+</body>
+</html>

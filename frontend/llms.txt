@@ -1,0 +1,12 @@
+# Aprovado OAB
+
+> Plataforma brasileira de preparação para a 1ª fase do Exame de Ordem (OAB) com banco de questões reais de provas anteriores, trilha de estudo guiada por incidência e prática por matéria.
+
+Aprovado OAB (aprovadonaoab.com.br) ajuda bacharéis em Direito que vão prestar o Exame da Ordem dos Advogados do Brasil (OAB) a estudar de forma direcionada para a 1ª fase, aplicada pela FGV. A plataforma reúne um banco com centenas de questões reais de provas anteriores (enunciado, alternativas, gabarito comentado, área do direito e nível de dificuldade), organizadas nas 13 matérias cobradas na prova: Direito Civil, Processo Civil, Constitucional, Direitos Humanos, Penal, Processo Penal, Trabalhista, Processo do Trabalho, Administrativo, Ética Profissional, Tributário, Empresarial e matérias complementares. A Trilha guia o estudo por ordem de incidência real na prova (alta, média, pontual), liberando subtemas progressivamente conforme o aluno avança. É possível praticar em modo rápido, simulado completo (80 questões) ou personalizado por matéria, acompanhando estatísticas de desempenho e sequência de estudo. Plano gratuito com anúncios; plano Premium (Pix ou cartão via Mercado Pago) remove anúncios e libera estatísticas completas.
+
+## Site
+- [Aprovado OAB — início](https://aprovadonaoab.com.br/): cadastro, login e acesso à plataforma de estudo.
+- [Guia OAB: as matérias mais cobradas e como estudar cada uma](https://aprovadonaoab.com.br/guia-oab.html): guia de referência com as 13 matérias da 1ª fase, o que cada uma cobra e como estudar com questões reais.
+
+## Para quem é
+Bacharéis em Direito se preparando para a 1ª fase do Exame de Ordem (OAB).
